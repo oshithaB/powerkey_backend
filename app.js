@@ -64,9 +64,20 @@ const chartRoutes = require("./routes/charts");
 const billRoutes = require("./routes/bill");
 
 app.use(cors({
-  origin: 'http://localhost:5173', // Allow frontend origin
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'https://powerkey-frontend-zuu4.vercel.app' // your Vercel frontend
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
+
 app.use(express.json());
 app.use('/uploads', express.static('public/uploads'));
 app.use('/Product_Uploads', express.static('Product_Uploads'));
