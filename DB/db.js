@@ -16,7 +16,7 @@ const pool = mysql.createPool({
     ssl: {
         rejectUnauthorized: false // required for Filess.io remote SSL
     },
-    connectTimeout:1800000 // 30 mins
+    connectTimeout:600000 // 10 mins
 });
 
 module.exports = pool;
