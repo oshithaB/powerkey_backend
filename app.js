@@ -64,19 +64,14 @@ const chartRoutes = require("./routes/charts");
 const billRoutes = require("./routes/bill");
 
 app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:5173',
-      'http://147.79.115.89:5173' // your Vercel frontend
-    ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
+  origin: ["http://147.79.115.89:5173", "http://localhost:5173"],
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+  credentials: false,
 }));
+
+app.options("*", cors());
+
 
 app.use(express.json());
 app.use('/uploads', express.static('public/uploads'));
