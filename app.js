@@ -67,7 +67,7 @@ app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
       'http://localhost:5173',
-      'https://powerkey-frontend-9yrt.vercel.app' // your Vercel frontend
+      'http://147.79.115.89:5173' // your Vercel frontend
     ];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
