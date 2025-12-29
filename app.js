@@ -13,8 +13,8 @@ const server = http.createServer(app);
    CORS CONFIG
 ========================= */
 const allowedOrigins = [
-  "http://147.79.115.89:5173",
-  "http://localhost:5173"
+  "http://147.79.115.89",
+  "http://localhost:5174"
 ];
 
 app.use(cors({
