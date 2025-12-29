@@ -19,6 +19,27 @@ async function createTables(db) {
             PRIMARY KEY (company_id),
             UNIQUE KEY unique_registration_number (registration_number)
         )`,
+
+        `CREATE TABLE IF NOT EXISTS role (
+            role_id int NOT NULL AUTO_INCREMENT,
+            name varchar(100) NOT NULL,
+            created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (role_id)
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS employees (
+            id int NOT NULL AUTO_INCREMENT,
+            name varchar(200) NOT NULL,
+            email varchar(255),
+            phone varchar(20),
+            address text,
+            hire_date varchar(255),
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY email (email)
+        )`,
+
         `CREATE TABLE IF NOT EXISTS tax_rates (
             tax_rate_id INT AUTO_INCREMENT PRIMARY KEY,
             company_id int NOT NULL,
@@ -29,12 +50,7 @@ async function createTables(db) {
             KEY company_id (company_id),
             CONSTRAINT tax_rates_ibfk_1 FOREIGN KEY (company_id) REFERENCES company (company_id) ON DELETE CASCADE
         )`,
-        `CREATE TABLE IF NOT EXISTS role (
-            role_id int NOT NULL AUTO_INCREMENT,
-            name varchar(100) NOT NULL,
-            created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (role_id)
-        )`,
+
         `CREATE TABLE IF NOT EXISTS user (
             user_id int NOT NULL AUTO_INCREMENT,
             role_id int NOT NULL,
@@ -52,6 +68,7 @@ async function createTables(db) {
             KEY role_id (role_id),
             CONSTRAINT user_ibfk_1 FOREIGN KEY (role_id) REFERENCES role (role_id)
         )`,
+
         `CREATE TABLE IF NOT EXISTS customer (
             id INT AUTO_INCREMENT PRIMARY KEY,
             company_id INT NOT NULL,
@@ -86,6 +103,7 @@ async function createTables(db) {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
         );`,
+
         `CREATE TABLE IF NOT EXISTS vendor (
             vendor_id INT AUTO_INCREMENT PRIMARY KEY,
             company_id INT,
@@ -113,18 +131,7 @@ async function createTables(db) {
             KEY company_id (company_id),
             CONSTRAINT vendor_ibfk_1 FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
         )`,
-        `CREATE TABLE IF NOT EXISTS employees (
-            id int NOT NULL AUTO_INCREMENT,
-            name varchar(200) NOT NULL,
-            email varchar(255),
-            phone varchar(20),
-            address text,
-            hire_date varchar(255),
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at timestamp DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            UNIQUE KEY email (email)
-        )`,
+
         `CREATE TABLE IF NOT EXISTS product_categories (
             id INT AUTO_INCREMENT PRIMARY KEY,
             company_id INT NOT NULL,
@@ -133,6 +140,61 @@ async function createTables(db) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
         )`,
+
+        `CREATE TABLE IF NOT EXISTS payment_methods (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS deposit_to (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS account_type (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company_id INT NOT NULL,
+            account_type_name VARCHAR(100) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS detail_type (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            detail_type_name VARCHAR(100) NOT NULL UNIQUE,
+            account_type_id INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (account_type_id) REFERENCES account_type(id) ON DELETE CASCADE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS payment_account (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            payment_account_name VARCHAR(100) NOT NULL,
+            account_type_id INT NOT NULL,
+            detail_type_id INT NOT NULL,
+            company_id INT NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (account_type_id) REFERENCES account_type(id),
+            FOREIGN KEY (detail_type_id) REFERENCES detail_type(id),
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS expense_categories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            category_name VARCHAR(100) NOT NULL,
+            company_id INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS payees (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company_id INT NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
+        )`,
+
         `CREATE TABLE IF NOT EXISTS products (
             id int NOT NULL AUTO_INCREMENT,
             company_id int NOT NULL,
@@ -163,6 +225,32 @@ async function createTables(db) {
             CONSTRAINT products_ibfk_3 FOREIGN KEY (preferred_vendor_id) REFERENCES vendor (vendor_id) ON DELETE SET NULL,
             CONSTRAINT products_ibfk_4 FOREIGN KEY (added_employee_id) REFERENCES employees (id) ON DELETE SET NULL
         )`,
+
+        `CREATE TABLE IF NOT EXISTS orders (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company_id INT NOT NULL,
+            vendor_id INT,
+            mailling_address TEXT,
+            email VARCHAR(255),
+            customer_id INT,
+            shipping_address TEXT,
+            order_no VARCHAR(100) NOT NULL,
+            order_date DATE NOT NULL,
+            category_name VARCHAR(100),
+            class VARCHAR(100),
+            location VARCHAR(100),
+            ship_via VARCHAR(100),
+            total_amount DECIMAL(15,2) DEFAULT 0.00,
+            status ENUM('open', 'closed') DEFAULT 'open',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY company_id (company_id),
+            KEY vendor_id (vendor_id),
+            KEY customer_id (customer_id),
+            CONSTRAINT orders_ibfk_1 FOREIGN KEY (company_id) REFERENCES company (company_id) ON DELETE CASCADE,
+            CONSTRAINT orders_ibfk_2 FOREIGN KEY (vendor_id) REFERENCES vendor (vendor_id) ON DELETE SET NULL,
+            CONSTRAINT orders_ibfk_3 FOREIGN KEY (customer_id) REFERENCES customer (id) ON DELETE SET NULL
+        )`,
+
         `CREATE TABLE IF NOT EXISTS estimates (
             id INT AUTO_INCREMENT PRIMARY KEY,
             estimate_number VARCHAR(100) NOT NULL UNIQUE,
@@ -197,20 +285,7 @@ async function createTables(db) {
             CONSTRAINT estimates_ibfk_2 FOREIGN KEY (customer_id) REFERENCES customer(id),
             CONSTRAINT estimates_ibfk_3 FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
         );`,
-        `CREATE TABLE IF NOT EXISTS estimate_items (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            estimate_id INT NOT NULL,
-            product_id INT NOT NULL,
-            description TEXT NOT NULL,
-            quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
-            unit_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-            actual_unit_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-            tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
-            tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-            total_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-            FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE,
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )`,
+
         `CREATE TABLE IF NOT EXISTS invoices (
             id INT AUTO_INCREMENT PRIMARY KEY,
             company_id INT NOT NULL,
@@ -245,6 +320,22 @@ async function createTables(db) {
             FOREIGN KEY (employee_id) REFERENCES employees(id),
             FOREIGN KEY (estimate_id) REFERENCES estimates(id)
         );`,
+
+        `CREATE TABLE IF NOT EXISTS estimate_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            estimate_id INT NOT NULL,
+            product_id INT NOT NULL,
+            description TEXT NOT NULL,
+            quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+            unit_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            actual_unit_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+            tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            total_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )`,
+
         `CREATE TABLE  IF NOT EXISTS invoice_items (
             id INT AUTO_INCREMENT PRIMARY KEY,
             invoice_id INT NOT NULL,
@@ -263,6 +354,7 @@ async function createTables(db) {
             FOREIGN KEY (invoice_id) REFERENCES invoices(id),
             FOREIGN KEY (product_id) REFERENCES products(id)
         )`,
+
         `CREATE TABLE IF NOT EXISTS invoice_attachments (
             id INT AUTO_INCREMENT PRIMARY KEY,
             invoice_id INT NOT NULL,
@@ -271,74 +363,6 @@ async function createTables(db) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (invoice_id) REFERENCES invoices(id)
-        )`,
-        `CREATE TABLE IF NOT EXISTS payment_methods (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) NOT NULL UNIQUE
-        )`,
-        `CREATE TABLE IF NOT EXISTS deposit_to (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) NOT NULL UNIQUE
-        )`,
-
-        `CREATE TABLE IF NOT EXISTS orders (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            company_id INT NOT NULL,
-            vendor_id INT,
-            mailling_address TEXT,
-            email VARCHAR(255),
-            customer_id INT,
-            shipping_address TEXT,
-            order_no VARCHAR(100) NOT NULL,
-            order_date DATE NOT NULL,
-            category_name VARCHAR(100),
-            class VARCHAR(100),
-            location VARCHAR(100),
-            ship_via VARCHAR(100),
-            total_amount DECIMAL(15,2) DEFAULT 0.00,
-            status ENUM('open', 'closed') DEFAULT 'open',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            KEY company_id (company_id),
-            KEY vendor_id (vendor_id),
-            KEY customer_id (customer_id),
-            CONSTRAINT orders_ibfk_1 FOREIGN KEY (company_id) REFERENCES company (company_id) ON DELETE CASCADE,
-            CONSTRAINT orders_ibfk_2 FOREIGN KEY (vendor_id) REFERENCES vendor (vendor_id) ON DELETE SET NULL,
-            CONSTRAINT orders_ibfk_3 FOREIGN KEY (customer_id) REFERENCES customer (id) ON DELETE SET NULL
-        )`,
-        `CREATE TABLE IF NOT EXISTS order_items (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            order_id INT NOT NULL,
-            product_id INT,
-            name VARCHAR(200) NOT NULL,
-            sku VARCHAR(100),
-            description TEXT,
-            qty INT NOT NULL,
-            rate DECIMAL(15,2) NOT NULL,
-            amount DECIMAL(15,2) DEFAULT 0.00,
-            class VARCHAR(100),
-            received BOOLEAN DEFAULT FALSE,
-            closed BOOLEAN DEFAULT FALSE,
-            remaining_qty INT DEFAULT 0,
-            stock_status ENUM('not_tracked', 'in_stock', 'out_of_stock') DEFAULT 'not_tracked',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            KEY order_id (order_id),
-            KEY product_id (product_id),
-            CONSTRAINT order_items_ibfk_1 FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
-            CONSTRAINT order_items_ibfk_2 FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL
-        )`,
-        `CREATE TABLE IF NOT EXISTS cheques (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            company_id INT NOT NULL,
-            cheque_number VARCHAR(50) NOT NULL UNIQUE,
-            bank_name VARCHAR(100),
-            branch_name VARCHAR(100),
-            cheque_date VARCHAR(150),
-            payee_name VARCHAR(255),
-            amount DECIMAL(15,2) NOT NULL,
-            status ENUM('pending', 'deposited', 'returned') DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
         )`,
 
         `CREATE TABLE IF NOT EXISTS payments (
@@ -361,100 +385,21 @@ async function createTables(db) {
             CONSTRAINT payments_ibfk_3 FOREIGN KEY (company_id) REFERENCES company (company_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;`,
 
-        `CREATE TABLE IF NOT EXISTS bill_payments (
+        `CREATE TABLE IF NOT EXISTS cheques (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            bill_id INT NOT NULL,
-            vendor_id INT NOT NULL,
             company_id INT NOT NULL,
-            payment_date DATE NOT NULL,
-            payment_amount DECIMAL(10,2) NOT NULL,
-            payment_method VARCHAR(50) NOT NULL,
-            deposit_to VARCHAR(100),
-            notes TEXT DEFAULT NULL,
+            cheque_number VARCHAR(50) NOT NULL UNIQUE,
+            bank_name VARCHAR(100),
+            branch_name VARCHAR(100),
+            cheque_date VARCHAR(150),
+            payee_name VARCHAR(255),
+            amount DECIMAL(15,2) NOT NULL,
+            status ENUM('pending', 'deposited', 'returned') DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
-            FOREIGN KEY (vendor_id) REFERENCES vendor(vendor_id),
             FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
         )`,
 
-        `CREATE TABLE IF NOT EXISTS account_type (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            company_id INT NOT NULL,
-            account_type_name VARCHAR(100) NOT NULL UNIQUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
-        )`,
-
-        `CREATE TABLE IF NOT EXISTS detail_type (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            detail_type_name VARCHAR(100) NOT NULL UNIQUE,
-            account_type_id INT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (account_type_id) REFERENCES account_type(id) ON DELETE CASCADE
-        )`,
-        `CREATE TABLE IF NOT EXISTS payment_account (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            payment_account_name VARCHAR(100) NOT NULL,
-            account_type_id INT NOT NULL,
-            detail_type_id INT NOT NULL,
-            company_id INT NOT NULL,
-            description TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (account_type_id) REFERENCES account_type(id),
-            FOREIGN KEY (detail_type_id) REFERENCES detail_type(id),
-            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
-        )`,
-        `CREATE TABLE IF NOT EXISTS expense_categories (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            category_name VARCHAR(100) NOT NULL,
-            company_id INT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
-        )`,
-
-        `CREATE TABLE IF NOT EXISTS expenses (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            company_id INT NOT NULL,
-            expense_number VARCHAR(100) NOT NULL UNIQUE,
-            payee_id INT NOT NULL,
-            payment_account_id INT,
-            payment_date DATE NOT NULL,
-            payment_method_id INT NOT NULL,
-            amount DECIMAL(15,2) NOT NULL,
-            notes TEXT,
-            status ENUM('paid', 'unpaid') NOT NULL DEFAULT 'unpaid',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (payment_account_id) REFERENCES payment_account(id),
-            FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id),
-            FOREIGN KEY (payee_id) REFERENCES payees(id),
-            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
-        )`,
-
-        `CREATE TABLE IF NOT EXISTS payees (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            company_id INT NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
-        )`,
-
-        `CREATE TABLE IF NOT EXISTS expense_items (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            expense_id INT NOT NULL,
-            category_id INT NOT NULL,
-            description TEXT,
-            amount DECIMAL(15,2) NOT NULL,
-            FOREIGN KEY (expense_id) REFERENCES expenses(id),
-            FOREIGN KEY (category_id) REFERENCES expense_categories(id)
-        )`,
-        `CREATE TABLE IF NOT EXISTS payment_methods (
-            id INT NOT NULL AUTO_INCREMENT,
-            name VARCHAR(100) NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY name (name)
-        )`,
-         
         `CREATE TABLE IF NOT EXISTS bills (
             id INT AUTO_INCREMENT PRIMARY KEY,
             company_id INT NOT NULL,
@@ -477,6 +422,7 @@ async function createTables(db) {
             FOREIGN KEY (vendor_id) REFERENCES vendor(vendor_id),
             FOREIGN KEY (order_id) REFERENCES orders(id)
         );`,
+
         `CREATE TABLE IF NOT EXISTS bill_items (
             id INT AUTO_INCREMENT PRIMARY KEY,
             bill_id INT NOT NULL,
@@ -488,6 +434,81 @@ async function createTables(db) {
             total_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
             FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
         );`,
+
+        `CREATE TABLE IF NOT EXISTS bill_payments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            bill_id INT NOT NULL,
+            vendor_id INT NOT NULL,
+            company_id INT NOT NULL,
+            payment_date DATE NOT NULL,
+            payment_amount DECIMAL(10,2) NOT NULL,
+            payment_method VARCHAR(50) NOT NULL,
+            deposit_to VARCHAR(100),
+            notes TEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
+            FOREIGN KEY (vendor_id) REFERENCES vendor(vendor_id),
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS expenses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company_id INT NOT NULL,
+            expense_number VARCHAR(100) NOT NULL UNIQUE,
+            payee_id INT NOT NULL,
+            payment_account_id INT,
+            payment_date DATE NOT NULL,
+            payment_method_id INT NOT NULL,
+            amount DECIMAL(15,2) NOT NULL,
+            notes TEXT,
+            status ENUM('paid', 'unpaid') NOT NULL DEFAULT 'unpaid',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (payment_account_id) REFERENCES payment_account(id),
+            FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id),
+            FOREIGN KEY (payee_id) REFERENCES payees(id),
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS expense_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            expense_id INT NOT NULL,
+            category_id INT NOT NULL,
+            description TEXT,
+            amount DECIMAL(15,2) NOT NULL,
+            FOREIGN KEY (expense_id) REFERENCES expenses(id),
+            FOREIGN KEY (category_id) REFERENCES expense_categories(id)
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS payment_methods (
+            id INT NOT NULL AUTO_INCREMENT,
+            name VARCHAR(100) NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY name (name)
+        )`,
+         
+        `CREATE TABLE IF NOT EXISTS order_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT NOT NULL,
+            product_id INT,
+            name VARCHAR(200) NOT NULL,
+            sku VARCHAR(100),
+            description TEXT,
+            qty INT NOT NULL,
+            rate DECIMAL(15,2) NOT NULL,
+            amount DECIMAL(15,2) DEFAULT 0.00,
+            class VARCHAR(100),
+            received BOOLEAN DEFAULT FALSE,
+            closed BOOLEAN DEFAULT FALSE,
+            remaining_qty INT DEFAULT 0,
+            stock_status ENUM('not_tracked', 'in_stock', 'out_of_stock') DEFAULT 'not_tracked',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY order_id (order_id),
+            KEY product_id (product_id),
+            CONSTRAINT order_items_ibfk_1 FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+            CONSTRAINT order_items_ibfk_2 FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL
+        )`,
 
     ];
 
