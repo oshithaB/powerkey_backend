@@ -3,17 +3,18 @@ const jwt = require('jsonwebtoken');
 
 const createCompany = async (req, res) => {
     try {
-        const { 
-            companyName, 
-            isTaxable, 
-            taxNumber, 
-            companyAddress, 
-            companyPhone, 
+        const {
+            companyName,
+            isTaxable,
+            taxNumber,
+            companyAddress,
+            companyPhone,
             companyEmail,
-            companyRegistrationNumber, 
-            notes, 
+            companyRegistrationNumber,
+            notes,
             termsAndConditions,
-            taxRates 
+            taxRates,
+            openingBalance
         } = req.body;
         const companyLogo = req.file ? `/uploads/${req.file.filename}` : null;
 
@@ -22,15 +23,15 @@ const createCompany = async (req, res) => {
 
         // Validate required fields
         if (!companyName || !companyRegistrationNumber) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Company name and registration number are required' 
+            return res.status(400).json({
+                success: false,
+                message: 'Company name and registration number are required'
             });
         }
 
         // Check if company already exists
         const [existingCompany] = await db.query(
-            'SELECT * FROM company WHERE registration_number = ?', 
+            'SELECT * FROM company WHERE registration_number = ?',
             [companyRegistrationNumber]
         );
 
@@ -44,18 +45,19 @@ const createCompany = async (req, res) => {
         try {
             // Insert new company
             const [result] = await db.query(
-                'INSERT INTO company (name, is_taxable, tax_number, company_logo, address, contact_number, email_address, registration_number, terms_and_conditions, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO company (name, is_taxable, tax_number, company_logo, address, contact_number, email_address, registration_number, terms_and_conditions, notes, opening_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
-                    companyName, 
-                    isTaxable === 'Taxable' ? 1 : 0, 
-                    isTaxable === 'Taxable' ? taxNumber : null, 
-                    companyLogo, 
-                    companyAddress || '', 
-                    companyPhone || '', 
+                    companyName,
+                    isTaxable === 'Taxable' ? 1 : 0,
+                    isTaxable === 'Taxable' ? taxNumber : null,
+                    companyLogo,
+                    companyAddress || '',
+                    companyPhone || '',
                     companyEmail || null,
-                    companyRegistrationNumber, 
-                    termsAndConditions || null, 
-                    notes || null
+                    companyRegistrationNumber,
+                    termsAndConditions || null,
+                    notes || null,
+                    openingBalance || 0
                 ]
             );
 
@@ -74,7 +76,7 @@ const createCompany = async (req, res) => {
                     console.error('Error parsing tax rates:', parseError);
                     parsedTaxRates = [];
                 }
-                
+
                 for (const taxRate of parsedTaxRates) {
                     if (taxRate.name && taxRate.rate > 0) {
                         await db.query(
@@ -102,12 +104,13 @@ const createCompany = async (req, res) => {
                 email: companyEmail || null,
                 registration_number: companyRegistrationNumber,
                 terms_and_conditions: termsAndConditions || null,
-                notes: notes || null
+                notes: notes || null,
+                opening_balance: openingBalance || 0
             };
 
-            return res.status(201).json({ 
-                success: true, 
-                message: 'Company created successfully', 
+            return res.status(201).json({
+                success: true,
+                message: 'Company created successfully',
                 company: companyData
             });
 
@@ -120,8 +123,8 @@ const createCompany = async (req, res) => {
 
     } catch (error) {
         console.error('Error creating company:', error);
-        res.status(500).json({ 
-            success: false, 
+        res.status(500).json({
+            success: false,
             message: error.message || 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
@@ -132,7 +135,7 @@ const getCompanies = async (req, res) => {
     try {
         console.log('Get companies request received');
         const [companies] = await db.query('SELECT * FROM company');
-        console.log('Companies fetched:', companies);        
+        console.log('Companies fetched:', companies);
         return res.status(200).json(companies);
     } catch (error) {
         console.error('Error fetching companies:', error);
@@ -146,7 +149,7 @@ const getDashboardData = async (req, res) => {
         console.log('Get dashboard data for companyId:', companyId);
 
         // Get basic metrics
-        const [cheques] = await db.query(`SELECT COUNT(*) as count FROM cheques WHERE company_id = ? AND status = "pending" AND (cheque_date < CURDATE() OR cheque_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY))`,[companyId]);
+        const [cheques] = await db.query(`SELECT COUNT(*) as count FROM cheques WHERE company_id = ? AND status = "pending" AND (cheque_date < CURDATE() OR cheque_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY))`, [companyId]);
         const [products] = await db.query('SELECT COUNT(*) as count FROM products WHERE company_id = ? AND quantity_on_hand <= reorder_level', [companyId]);
         const [overdue] = await db.query('SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices WHERE company_id = ? AND status = "overdue"', [companyId]);
         const [revenue] = await db.query('SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices WHERE company_id = ? AND status != "proforma"', [companyId]);
@@ -198,12 +201,12 @@ const selectCompany = async (req, res) => {
     try {
         const { companyId } = req.params;
         console.log('Select company request received for companyId:', companyId);
-        
+
         const [company] = await db.query(
-            'SELECT * FROM company WHERE company_id = ?', 
+            'SELECT * FROM company WHERE company_id = ?',
             [companyId]
         );
-        
+
         if (company.length === 0) {
             return res.status(404).json({ success: false, message: 'Company not found' });
         }
@@ -220,7 +223,7 @@ const updateCompany = async (req, res) => {
         const { companyId } = req.params;
         const updates = req.body;
         const companyLogo = req.file ? `/uploads/${req.file.filename}` : null;
-        
+
         console.log('Update company request received for companyId:', companyId, 'with updates:', updates);
 
         if (Object.keys(updates).length === 0 && !companyLogo) {
@@ -228,9 +231,9 @@ const updateCompany = async (req, res) => {
         }
 
         const allowedFields = [
-            'name', 'is_taxable', 'tax_number', 'company_logo', 
-            'address', 'contact_number', 'email_address', 
-            'registration_number', 'terms_and_conditions', 'notes'
+            'name', 'is_taxable', 'tax_number', 'company_logo',
+            'address', 'contact_number', 'email_address',
+            'registration_number', 'terms_and_conditions', 'notes', 'opening_balance'
         ];
 
         const fieldsToUpdate = {};
@@ -261,7 +264,7 @@ const updateCompany = async (req, res) => {
             // Handle taxable status
             if (fieldsToUpdate.is_taxable) {
                 fieldsToUpdate.is_taxable = fieldsToUpdate.is_taxable === 'Taxable' ? 1 : 0;
-                
+
                 // If changing to non-taxable, clear tax number and delete existing tax rates
                 if (fieldsToUpdate.is_taxable === 0) {
                     fieldsToUpdate.tax_number = null;
@@ -333,8 +336,8 @@ const updateCompany = async (req, res) => {
             // Commit transaction
             await db.query('COMMIT');
 
-            return res.status(200).json({ 
-                success: true, 
+            return res.status(200).json({
+                success: true,
                 message: 'Company updated successfully'
             });
 
@@ -371,19 +374,19 @@ const deleteCompany = async (req, res) => {
 
         try {
             // Delete related records in the correct order to avoid foreign key constraint errors
-            
+
             // Delete tax rates first
             await db.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
             console.log('Deleted tax rates for company:', companyId);
-            
+
             // Delete customers (note: table name is 'customer' not 'customers')
             await db.query('DELETE FROM customer WHERE company_id = ?', [companyId]);
             console.log('Deleted customers for company:', companyId);
-            
+
             // Delete vendors
             await db.query('DELETE FROM vendor WHERE company_id = ?', [companyId]);
             console.log('Deleted vendors for company:', companyId);
-            
+
             // Delete the company
             const [result] = await db.query('DELETE FROM company WHERE company_id = ?', [companyId]);
 
@@ -395,8 +398,8 @@ const deleteCompany = async (req, res) => {
             await db.query('COMMIT');
 
             console.log('Company deleted:', companyId);
-            return res.status(200).json({ 
-                success: true, 
+            return res.status(200).json({
+                success: true,
                 message: 'Company deleted successfully'
             });
 
@@ -409,8 +412,8 @@ const deleteCompany = async (req, res) => {
 
     } catch (error) {
         console.error('Error deleting company:', error);
-        return res.status(500).json({ 
-            success: false, 
+        return res.status(500).json({
+            success: false,
             message: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
@@ -423,7 +426,7 @@ const getMoneyInDrawerByCompany = async (req, res) => {
 
         const { company_id } = req.params;
         const { start_date, end_date } = req.query;
-        
+
         // Default to today if no dates provided
         const today = new Date().toISOString().split('T')[0];
         const startDate = start_date || today;

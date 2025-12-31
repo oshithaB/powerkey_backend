@@ -19,7 +19,7 @@ const getBalanceSheetData = async (req, res) => {
 
         // Get company information
         const [companyResult] = await db.execute(
-            'SELECT name FROM company WHERE company_id = ?',
+            'SELECT name, opening_balance FROM company WHERE company_id = ?',
             [companyId]
         );
 
@@ -31,6 +31,7 @@ const getBalanceSheetData = async (req, res) => {
         }
 
         const companyName = companyResult[0].name;
+        const companyOpeningBalance = parseFloat(companyResult[0].opening_balance) || 0;
 
         // Calculate Assets - Accounts Receivable
         let assetsQuery = `
@@ -65,7 +66,7 @@ const getBalanceSheetData = async (req, res) => {
         }
 
         const [cashResult] = await db.execute(cashQuery, cashParams);
-        const cash = parseFloat(cashResult[0].cash) || 0;
+        const cash = (parseFloat(cashResult[0].cash) || 0) + companyOpeningBalance;
 
         // Calculate Inventory
         const [inventoryResult] = await db.execute(`
@@ -152,7 +153,7 @@ const getBalanceSheetData = async (req, res) => {
         const totalExpenses = parseFloat(expenseResult[0].total_expenses) || 0;
 
         const netIncome = totalRevenue - totalExpenses;
-        const openingBalance = 0;
+        const openingBalance = companyOpeningBalance;
         const retainedEarnings = 0;
         const totalEquity = openingBalance + retainedEarnings + netIncome;
 
@@ -230,7 +231,7 @@ const getFormattedBalanceSheet = async (req, res) => {
 
         // Get company information
         const [companyResult] = await db.execute(
-            'SELECT name FROM company WHERE company_id = ?',
+            'SELECT name, opening_balance FROM company WHERE company_id = ?',
             [companyId]
         );
 
@@ -242,6 +243,7 @@ const getFormattedBalanceSheet = async (req, res) => {
         }
 
         const companyName = companyResult[0].name;
+        const companyOpeningBalance = parseFloat(companyResult[0].opening_balance) || 0;
 
         // Calculate Assets - Accounts Receivable
         let assetsQuery = `
@@ -276,7 +278,7 @@ const getFormattedBalanceSheet = async (req, res) => {
         }
 
         const [cashResult] = await db.execute(cashQuery, cashParams);
-        const cash = parseFloat(cashResult[0].cash) || 0;
+        const cash = (parseFloat(cashResult[0].cash) || 0) + companyOpeningBalance;
 
         // Calculate Inventory
         const [inventoryResult] = await db.execute(`
@@ -363,7 +365,7 @@ const getFormattedBalanceSheet = async (req, res) => {
         const totalExpenses = parseFloat(expenseResult[0].total_expenses) || 0;
 
         const netIncome = totalRevenue - totalExpenses;
-        const openingBalance = 0;
+        const openingBalance = companyOpeningBalance;
         const retainedEarnings = 0;
         const totalEquity = openingBalance + retainedEarnings + netIncome;
 
