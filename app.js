@@ -14,9 +14,11 @@ const server = http.createServer(app);
 ========================= */
 const allowedOrigins = [
   "http://147.79.115.89",
+  "http://147.79.115.89:5173",
+  "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:4173",
-  "http://147.79.115.89:5173"
+  "http://powerkey.work.gd:5173"
 ];
 
 app.use(cors({
