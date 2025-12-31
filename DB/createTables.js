@@ -15,10 +15,12 @@ async function createTables(db) {
             registration_number varchar(100) NOT NULL,
             terms_and_conditions text,
             notes text,
+            opening_balance DECIMAL(15, 2) DEFAULT 0.00,
             created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (company_id),
             UNIQUE KEY unique_registration_number (registration_number)
         )`,
+
 
         `CREATE TABLE IF NOT EXISTS role (
             role_id int NOT NULL AUTO_INCREMENT,
@@ -487,7 +489,7 @@ async function createTables(db) {
             PRIMARY KEY (id),
             UNIQUE KEY name (name)
         )`,
-         
+
         `CREATE TABLE IF NOT EXISTS order_items (
             id INT AUTO_INCREMENT PRIMARY KEY,
             order_id INT NOT NULL,
@@ -514,10 +516,22 @@ async function createTables(db) {
 
     for (const table of tables) {
         try {
-        await db.execute(table);
+            await db.execute(table);
         } catch (error) {
-        console.error('Error creating table:', error);
+            console.error('Error creating table:', error);
         }
+    }
+
+    // Check and add opening_balance column to company table if it doesn't exist
+    try {
+        const [columns] = await db.execute("SHOW COLUMNS FROM company LIKE 'opening_balance'");
+        if (columns.length === 0) {
+            console.log('Adding opening_balance column to company table...');
+            await db.execute("ALTER TABLE company ADD COLUMN opening_balance DECIMAL(15, 2) DEFAULT 0.00 AFTER notes");
+            console.log('opening_balance column added successfully.');
+        }
+    } catch (error) {
+        console.error('Error checking/adding opening_balance column:', error);
     }
 
     // Insert default roles and users
