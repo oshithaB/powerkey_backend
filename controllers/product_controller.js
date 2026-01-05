@@ -130,7 +130,8 @@ const createProduct = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Invalid numeric values provided' });
             }
 
-            // Check for existing SKU using connection
+            // SKU uniqueness check removed as per user request
+            /* 
             if (sku) {
                 const [existingProduct] = await connection.query(
                     'SELECT * FROM products WHERE company_id = ? AND sku = ?',
@@ -141,7 +142,8 @@ const createProduct = async (req, res) => {
                     await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Product with this SKU already exists' });
                 }
-            }
+            } 
+            */
 
             // Validate referenced IDs using connection
             if (category_id) {
@@ -355,6 +357,8 @@ const updateProduct = async (req, res) => {
 
             const existingProduct = existingProductRows[0];
 
+            // SKU uniqueness check removed as per user request
+            /*
             if (sku) {
                 const [skuConflict] = await connection.query(
                     'SELECT * FROM products WHERE company_id = ? AND sku = ? AND id != ?',
@@ -366,6 +370,7 @@ const updateProduct = async (req, res) => {
                     return res.status(400).json({ success: false, message: 'SKU already in use by another product' });
                 }
             }
+            */
 
             // Validations for referenced IDs
             if (category_id) {

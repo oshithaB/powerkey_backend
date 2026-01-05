@@ -46,7 +46,7 @@ async function createTables(db) {
             tax_rate_id INT AUTO_INCREMENT PRIMARY KEY,
             company_id int NOT NULL,
             name VARCHAR(100) NOT NULL,
-            rate DECIMAL(5,2) NOT NULL,
+            rate DECIMAL(10,5) NOT NULL,
             is_default BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY company_id (company_id),
@@ -331,7 +331,7 @@ async function createTables(db) {
             quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
             unit_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
             actual_unit_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-            tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+            tax_rate DECIMAL(10,5) NOT NULL DEFAULT 0.00,
             tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
             total_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
             FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE,
@@ -347,7 +347,7 @@ async function createTables(db) {
             quantity DECIMAL(10,2) NOT NULL,
             unit_price DECIMAL(10,2) NOT NULL,
             actual_unit_price DECIMAL(10,2) NOT NULL,
-            tax_rate DECIMAL(5,2) NOT NULL,
+            tax_rate DECIMAL(10,5) NOT NULL,
             tax_amount DECIMAL(10,2) NOT NULL,
             total_price DECIMAL(10,2) NOT NULL,
             stock_detail JSON DEFAULT NULL,
@@ -546,6 +546,18 @@ async function createTables(db) {
         }
     } catch (error) {
         console.error('Error checking/adding opening_balance column:', error);
+    }
+
+    // --- MIGRATION FOR TAX PRECISION ---
+    try {
+        console.log('Checking and updating tax precision to DECIMAL(10,5)...');
+        await db.execute("ALTER TABLE tax_rates MODIFY COLUMN rate DECIMAL(10,5) NOT NULL");
+        await db.execute("ALTER TABLE estimate_items MODIFY COLUMN tax_rate DECIMAL(10,5) NOT NULL DEFAULT 0.00000");
+        await db.execute("ALTER TABLE invoice_items MODIFY COLUMN tax_rate DECIMAL(10,5) NOT NULL");
+        console.log('Tax precision updated successfully.');
+    } catch (error) {
+        // Ignore error if columns already modified or tables don't exist (though they should)
+        console.warn('Migration for tax precision warning (safe to ignore if already updated):', error.message);
     }
 
     // Insert default roles and users
