@@ -2,7 +2,7 @@ const db = require('../DB/db');
 const asyncHandler = require('express-async-handler');
 
 // Create Invoice
-const createInvoice = asyncHandler(async (req, res) => { 
+const createInvoice = asyncHandler(async (req, res) => {
   const {
     company_id,
     customer_id,
@@ -487,8 +487,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
 
         const stockDetails = typeof item.stock_detail === 'string'
-        ? JSON.parse(item.stock_detail || '[]')
-        : (item.stock_detail || []);
+          ? JSON.parse(item.stock_detail || '[]')
+          : (item.stock_detail || []);
 
 
         for (const invoiceStockItem of stockDetails) {
@@ -535,7 +535,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
     }
 
     // ------------------ End of Cancel Invoice handle ----------------------------------------
-    
+
     // -------- Update invoice items with inventory control if invoice is not cancelled -------
     if (status !== 'cancelled') {
 
@@ -565,7 +565,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
           console.log('Processing existing item with ID:', item.id);
 
-          const oldQty = oldItems[item.id].qty; 
+          const oldQty = oldItems[item.id].qty;
           const diff = item.quantity - oldQty;
 
           if ((status === "opened" || status === "overdue") && invoice_type === "invoice") {
@@ -1121,7 +1121,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
       );
 
       console.log("Customer balance updated");
-    } 
+    }
 
     // Update existing invoice
     const [updateResult] = await connection.query(
@@ -1331,7 +1331,7 @@ const getInvoices = async (req, res) => {
                      LEFT JOIN employees e ON i.employee_id = e.id
                      WHERE i.company_id = ?
                      ORDER BY i.created_at DESC`;
-      
+
       const [invoices] = await connection.query(query, [company_id]);
 
       const currentDate = new Date();
@@ -1410,7 +1410,7 @@ const getInvoiceById = async (req, res) => {
                    LEFT JOIN customer c ON i.customer_id = c.id
                    LEFT JOIN employees e ON i.employee_id = e.id
                    WHERE i.id = ?`;
-    
+
     const [invoice] = await db.query(query, [invoiceId]);
 
     if (invoice.length === 0) {
@@ -1429,7 +1429,7 @@ const getInvoiceById = async (req, res) => {
 };
 
 // Get Invoice Items
-const getInvoiceItems = async(req, res) => {
+const getInvoiceItems = async (req, res) => {
   try {
     const { invoiceId } = req.params;
 
@@ -1481,7 +1481,7 @@ const getInvoicesByCustomer = async (req, res) => {
       const currentDate = new Date();
       for (const invoice of invoices) {
         const dueDate = new Date(invoice.due_date);
-        
+
         // FIXED: Only update status to overdue if NOT proforma
         if (
           invoice.status !== 'proforma' && // Added this check
@@ -1590,27 +1590,27 @@ const recordPayment = async (req, res) => {
          WHERE id = ? AND company_id = ? AND customer_id = ?`,
         [invoice_id, company_id, customerId]
       );
-      
+
       if (invoice.length === 0) {
         await connection.rollback();
         return res.status(404).json({ error: `Invoice ${invoice_id} not found` });
       }
-      
+
       const newPaidAmount = (Number(invoice[0].paid_amount) || 0) + Number(invoicePaymentAmount);
       const totalAmount = Number(invoice[0].total_amount) || 0;
       const balanceDue = totalAmount - newPaidAmount;
       let status = invoice[0].status;
-      
+
       // FIXED: Only update status if the invoice is NOT proforma
       if (status !== 'proforma') {
         status = 'opened';
-      
+
         if (newPaidAmount >= totalAmount) {
           status = 'paid';
         } else if (newPaidAmount > 0) {
           status = 'partially_paid';
         }
-      
+
         const dueDate = new Date(invoice[0].due_date);
         if (
           status !== 'paid' &&
@@ -1622,14 +1622,14 @@ const recordPayment = async (req, res) => {
         }
       }
       // If status is 'proforma', it remains unchanged regardless of payment status
-      
+
       // Insert payment
       await connection.query(
         `INSERT INTO payments (invoice_id, customer_id, company_id, payment_amount, payment_date, payment_method, deposit_to, notes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [invoice_id, customerId, company_id, invoicePaymentAmount, payment_date, payment_method, deposit_to, notes || null]
       );
-      
+
       // Update customer credit limit
       await connection.query(
         `UPDATE customer 
@@ -1637,7 +1637,7 @@ const recordPayment = async (req, res) => {
          WHERE id = ? AND company_id = ?`,
         [invoicePaymentAmount, customerId, company_id]
       );
-      
+
       // Update invoice - paid_amount and balance_due are updated, but status is preserved for proforma
       await connection.query(
         `UPDATE invoices 
@@ -1662,7 +1662,7 @@ const recordPayment = async (req, res) => {
 };
 
 const checkCustomerEligibility = async (req, res) => {
-  const { customer_id, company_id, invoice_total, operation_type} = req.body;
+  const { customer_id, company_id, invoice_total, operation_type } = req.body;
 
   console.log('Checking customer eligibility:', { customer_id, company_id });
 
@@ -1685,7 +1685,7 @@ const checkCustomerEligibility = async (req, res) => {
 
     const creditLimit = Number(customerRows[0].credit_limit) || 0;
     const currentBalance = Number(customerRows[0].current_balance) || 0;
-      
+
     // Check for overdue invoices that are 60+ days past due
     const [hasOverdue] = await connection.query(
       `SELECT * FROM invoices 
@@ -1717,7 +1717,7 @@ const checkCustomerEligibility = async (req, res) => {
 };
 
 // get sales page data
-const getSalesPageDate = async(req, res) => {
+const getSalesPageDate = async (req, res) => {
   const { company_id } = req.params;
 
   if (!company_id) {
