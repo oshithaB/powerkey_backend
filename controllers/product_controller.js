@@ -312,7 +312,11 @@ const updateProduct = async (req, res) => {
             return res.status(400).json({ success: false, message: err.message || 'File upload error' });
         }
 
+        const connection = await db.getConnection();
+
         try {
+            await connection.beginTransaction();
+
             const { company_id, product_id } = req.params;
             const {
                 sku,
@@ -326,10 +330,10 @@ const updateProduct = async (req, res) => {
                 quantity_on_hand,
                 manual_count,
                 reorder_level,
-                order_quantity,  // Add this line
-                commission,      // Add this line
-                commission_type, // Add this line
-                commission_input, // Add this line
+                order_quantity,
+                commission,
+                commission_type,
+                commission_input,
                 is_active
             } = req.body;
             const image = req.file ? `/Product_Uploads/${req.file.filename}` : req.body.image;
@@ -338,52 +342,203 @@ const updateProduct = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Company ID and Product ID are required' });
             }
 
-            const [existingProduct] = await db.query(
-                'SELECT * FROM products WHERE id = ? AND company_id = ?',
+            // Lock the product row for update
+            const [existingProductRows] = await connection.query(
+                'SELECT * FROM products WHERE id = ? AND company_id = ? FOR UPDATE',
                 [product_id, company_id]
             );
 
-            if (existingProduct.length === 0) {
+            if (existingProductRows.length === 0) {
+                await connection.rollback();
                 return res.status(404).json({ success: false, message: 'Product not found' });
             }
 
+            const existingProduct = existingProductRows[0];
+
             if (sku) {
-                const [skuConflict] = await db.query(
+                const [skuConflict] = await connection.query(
                     'SELECT * FROM products WHERE company_id = ? AND sku = ? AND id != ?',
                     [company_id, sku, product_id]
                 );
 
                 if (skuConflict.length > 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'SKU already in use by another product' });
                 }
             }
 
+            // Validations for referenced IDs
             if (category_id) {
-                const [category] = await db.query('SELECT id FROM product_categories WHERE id = ? AND company_id = ?', [category_id, company_id]);
+                const [category] = await connection.query('SELECT id FROM product_categories WHERE id = ? AND company_id = ?', [category_id, company_id]);
                 if (category.length === 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Invalid category ID' });
                 }
             }
 
             if (preferred_vendor_id) {
-                const [vendor] = await db.query('SELECT vendor_id FROM vendor WHERE vendor_id = ? AND company_id = ?', [preferred_vendor_id, company_id]);
+                const [vendor] = await connection.query('SELECT vendor_id FROM vendor WHERE vendor_id = ? AND company_id = ?', [preferred_vendor_id, company_id]);
                 if (vendor.length === 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Invalid vendor ID' });
                 }
             }
 
             if (added_employee_id) {
-                const [employee] = await db.query('SELECT id FROM employees WHERE id = ?', [added_employee_id]);
+                const [employee] = await connection.query('SELECT id FROM employees WHERE id = ?', [added_employee_id]);
                 if (employee.length === 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Invalid employee ID' });
                 }
             }
 
+            // --- INVENTORY LOGIC ---
+            // 1. Check if there is any stock history for this product
+            const [stockHistory] = await connection.query(
+                `SELECT id FROM order_items WHERE product_id = ? LIMIT 1`,
+                [product_id]
+            );
+
+            const hasStockHistory = stockHistory.length > 0;
+            const currentQty = parseInt(existingProduct.quantity_on_hand || 0);
+            const newQty = quantity_on_hand !== undefined ? parseInt(quantity_on_hand) : currentQty;
+            const newCostPrice = cost_price !== undefined ? parseFloat(cost_price) : parseFloat(existingProduct.cost_price || 0);
+
+            // Logic A: Deferred Opening Stock (No History AND New Qty > 0)
+            if (!hasStockHistory && newQty > 0) {
+                const orderNo = `OPENING-STK-${product_id}-${Date.now()}`;
+                const currentDate = new Date().toISOString().split('T')[0];
+
+                const [orderResult] = await connection.query(
+                    `INSERT INTO orders (
+                        company_id, vendor_id, order_no, order_date, 
+                        total_amount, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                    [
+                        company_id,
+                        preferred_vendor_id || existingProduct.preferred_vendor_id || null,
+                        orderNo,
+                        currentDate,
+                        0,
+                        'closed'
+                    ]
+                );
+                const orderId = orderResult.insertId;
+
+                await connection.query(
+                    `INSERT INTO order_items (
+                        order_id, product_id, name, sku, description, 
+                        qty, rate, amount, 
+                        received, closed, remaining_qty, stock_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        orderId,
+                        product_id,
+                        name || existingProduct.name,
+                        sku || existingProduct.sku,
+                        'Opening Stock',
+                        newQty,
+                        newCostPrice,
+                        0,
+                        true,
+                        true,
+                        newQty,
+                        'in_stock'
+                    ]
+                );
+            }
+            // Logic B: Inventory Adjustment (History Exists AND Qty Changed)
+            else if (hasStockHistory && newQty !== currentQty) {
+                const diff = newQty - currentQty;
+
+                // Log the adjustment
+                await connection.query(
+                    `INSERT INTO inventory_adjustments (
+                        company_id, product_id, previous_quantity, new_quantity, adjustment_quantity, reason
+                    ) VALUES (?, ?, ?, ?, ?, ?)`,
+                    [company_id, product_id, currentQty, newQty, diff, diff > 0 ? 'Stock Adjustment - Surplus' : 'Stock Adjustment - Shrinkage']
+                );
+
+                if (diff > 0) {
+                    // Surplus: Add new stock batch
+                    const orderNo = `ADJ-IN-${product_id}-${Date.now()}`;
+                    const currentDate = new Date().toISOString().split('T')[0];
+
+                    const [orderResult] = await connection.query(
+                        `INSERT INTO orders (
+                            company_id, vendor_id, order_no, order_date, 
+                            total_amount, status, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                        [company_id, null, orderNo, currentDate, 0, 'closed']
+                    );
+
+                    await connection.query(
+                        `INSERT INTO order_items (
+                            order_id, product_id, name, sku, description, 
+                            qty, rate, amount, 
+                            received, closed, remaining_qty, stock_status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            orderResult.insertId,
+                            product_id,
+                            name || existingProduct.name,
+                            sku || existingProduct.sku,
+                            'Stock Adjustment - Surplus',
+                            diff,
+                            newCostPrice,
+                            0,
+                            true,
+                            true,
+                            diff,
+                            'in_stock'
+                        ]
+                    );
+                } else {
+                    // Shrinkage: Reduce from existing batches (FIFO)
+                    const absDiff = Math.abs(diff);
+                    let qtyToReduce = absDiff;
+
+                    const [availableBatches] = await connection.query(
+                        `SELECT id, remaining_qty, stock_status FROM order_items 
+                         WHERE product_id = ? AND stock_status = 'in_stock' 
+                         ORDER BY created_at ASC`,
+                        [product_id]
+                    );
+
+                    for (const batch of availableBatches) {
+                        if (qtyToReduce <= 0) break;
+
+                        if (batch.remaining_qty > qtyToReduce) {
+                            // Partial reduction of this batch
+                            await connection.query(
+                                `UPDATE order_items SET remaining_qty = remaining_qty - ? WHERE id = ?`,
+                                [qtyToReduce, batch.id]
+                            );
+                            qtyToReduce = 0;
+                        } else {
+                            // Consume entire batch
+                            qtyToReduce -= batch.remaining_qty;
+                            await connection.query(
+                                `UPDATE order_items SET remaining_qty = 0, stock_status = 'out_of_stock' WHERE id = ?`,
+                                [batch.id]
+                            );
+                        }
+                    }
+
+                    if (qtyToReduce > 0) {
+                        // Warn: Data inconsistency (Actual stock < Database stock claim)
+                        console.warn(`Shrinkage adjustment for product ${product_id} claimed ${absDiff} but only found stock for ${absDiff - qtyToReduce}. Database quantity will be forced to match.`);
+                    }
+                }
+            }
+
+
+            // --- NORMAL UPDATE ---
             const allowedFields = [
                 'sku', 'name', 'image', 'description', 'category_id',
                 'preferred_vendor_id', 'added_employee_id', 'unit_price',
                 'cost_price', 'quantity_on_hand', 'manual_count', 'reorder_level',
-                'order_quantity', 'commission', 'commission_type', 'is_active'  // Add commission_type here
+                'order_quantity', 'commission', 'commission_type', 'is_active'
             ];
 
             const fieldsToUpdate = {};
@@ -392,30 +547,24 @@ const updateProduct = async (req, res) => {
                     fieldsToUpdate[key] = req.body[key];
                 }
             }
-            if (image) {
-                fieldsToUpdate['image'] = image;
+            if (image) fieldsToUpdate['image'] = image;
+
+            if (Object.keys(fieldsToUpdate).length > 0) {
+                const setClauses = [];
+                const values = [];
+
+                for (const key in fieldsToUpdate) {
+                    setClauses.push(`${key} = ?`);
+                    values.push(fieldsToUpdate[key]);
+                }
+
+                values.push(product_id, company_id);
+
+                const updateQuery = `UPDATE products SET ${setClauses.join(', ')} WHERE id = ? AND company_id = ?`;
+                await connection.query(updateQuery, values);
             }
 
-            if (Object.keys(fieldsToUpdate).length === 0) {
-                return res.status(400).json({ success: false, message: 'No valid fields to update' });
-            }
-
-            const setClauses = [];
-            const values = [];
-
-            for (const key in fieldsToUpdate) {
-                setClauses.push(`${key} = ?`);
-                values.push(fieldsToUpdate[key]);
-            }
-
-            values.push(product_id, company_id);
-
-            const updateQuery = `UPDATE products SET ${setClauses.join(', ')} WHERE id = ? AND company_id = ?`;
-            const [result] = await db.query(updateQuery, values);
-
-            if (result.affectedRows === 0) {
-                return res.status(400).json({ success: false, message: 'No changes made to the product' });
-            }
+            await connection.commit();
 
             return res.status(200).json({
                 success: true,
@@ -423,8 +572,11 @@ const updateProduct = async (req, res) => {
             });
 
         } catch (error) {
+            await connection.rollback();
             console.error('Error updating product:', error);
             return res.status(500).json({ success: false, message: 'Internal server error' });
+        } finally {
+            connection.release();
         }
     });
 };

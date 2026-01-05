@@ -512,6 +512,20 @@ async function createTables(db) {
             CONSTRAINT order_items_ibfk_2 FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL
         )`,
 
+        `CREATE TABLE IF NOT EXISTS inventory_adjustments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company_id INT NOT NULL,
+            product_id INT NOT NULL,
+            user_id INT, 
+            previous_quantity INT NOT NULL,
+            new_quantity INT NOT NULL,
+            adjustment_quantity INT NOT NULL, 
+            reason VARCHAR(255) DEFAULT 'Manual Adjustment',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        )`,
+
     ];
 
     for (const table of tables) {

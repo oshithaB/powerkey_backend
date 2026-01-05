@@ -6,7 +6,7 @@ class ReportController {
         try {
             const { company_id } = req.params;
             const { start_date, end_date } = req.query;
-            
+
             if (!company_id) {
                 return res.status(400).json({
                     success: false,
@@ -19,7 +19,7 @@ class ReportController {
             const startOfYear = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
             let dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
             let dateParams = [startOfYear, today];
-            
+
             if (start_date && end_date) {
                 dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
                 dateParams = [start_date, end_date];
@@ -32,7 +32,7 @@ class ReportController {
             }
 
             // 1. INCOME CALCULATIONS
-            
+
             // Sales of Product Income - Total revenue from products
             const [productIncomeResult] = await db.execute(`
                 SELECT 
@@ -78,23 +78,19 @@ class ReportController {
                 ${dateCondition}
             `, [company_id, ...dateParams]);
 
-            // Inventory Shrinkage - Calculate based on expected vs actual inventory
+            // Inventory Shrinkage - Calculate based on adjustment table (negative adjustments)
             const [inventoryShrinkageResult] = await db.execute(`
                 SELECT 
-                    COALESCE(SUM(
-                        CASE 
-                            WHEN p.quantity_on_hand > p.manual_count 
-                            THEN (p.quantity_on_hand - p.manual_count) * p.cost_price 
-                            ELSE 0 
-                        END
-                    ), 0) as inventory_shrinkage
-                FROM products p
-                WHERE p.company_id = ?
-                AND p.is_active = TRUE
-            `, [company_id]);
+                    COALESCE(ABS(SUM(ia.adjustment_quantity * p.cost_price)), 0) as inventory_shrinkage
+                FROM inventory_adjustments ia
+                JOIN products p ON ia.product_id = p.id
+                WHERE ia.company_id = ?
+                AND ia.adjustment_quantity < 0
+                AND DATE(ia.created_at) BETWEEN ? AND ?
+            `, [company_id, ...dateParams]);
 
             // 3. OTHER INCOME AND EXPENSES (placeholders for future implementation)
-            
+
             // Other Income - From non-product sources
             const [otherIncomeResult] = await db.execute(`
                 SELECT 0 as other_income
@@ -249,43 +245,43 @@ class ReportController {
     static async getMonthlyProfitAndLoss(req, res) {
         try {
             const { company_id, year } = req.params;
-    
+
             if (!company_id) {
                 return res.status(400).json({
                     success: false,
                     message: 'Company ID is required'
                 });
             }
-    
+
             const selectedYear = year ? parseInt(year) : new Date().getFullYear();
             const currentDate = new Date();
             const currentYear = currentDate.getFullYear();
             const currentMonth = currentDate.getMonth() + 1; // JavaScript months are 0-based
-    
+
             // Define month names
             const monthNames = [
                 'January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December'
             ];
-    
+
             // Determine which months to include
             let monthsToInclude = 12;
             if (selectedYear === currentYear) {
                 monthsToInclude = currentMonth; // Only show up to current month for current year
             }
-    
+
             const monthlyBreakdown = [];
             let totalInventoryShrinkage = 0;
-    
+
             // Loop through each month
             for (let month = 1; month <= monthsToInclude; month++) {
                 // Create date range for the month
                 const startDate = new Date(selectedYear, month - 1, 1);
                 const endDate = new Date(selectedYear, month, 0); // Last day of the month
-                
+
                 const startDateStr = startDate.toISOString().split('T')[0];
                 const endDateStr = endDate.toISOString().split('T')[0];
-    
+
                 // 1. INCOME CALCULATIONS FOR THE MONTH
                 // Product Income
                 const [productIncomeResult] = await db.execute(`
@@ -297,7 +293,7 @@ class ReportController {
                     AND i.status != 'proforma'
                     AND i.invoice_date BETWEEN ? AND ?
                 `, [company_id, startDateStr, endDateStr]);
-    
+
                 // Tax Income
                 const [taxIncomeResult] = await db.execute(`
                     SELECT 
@@ -307,7 +303,7 @@ class ReportController {
                     AND i.status != 'proforma'
                     AND i.invoice_date BETWEEN ? AND ?
                 `, [company_id, startDateStr, endDateStr]);
-    
+
                 // Discounts Given
                 const [discountsResult] = await db.execute(`
                     SELECT 
@@ -317,7 +313,7 @@ class ReportController {
                     AND i.status != 'proforma'
                     AND i.invoice_date BETWEEN ? AND ?
                 `, [company_id, startDateStr, endDateStr]);
-    
+
                 // 2. COST OF SALES CALCULATIONS FOR THE MONTH
                 // Cost of Sales
                 const [costOfSalesResult] = await db.execute(`
@@ -330,12 +326,18 @@ class ReportController {
                     AND i.status != 'proforma'
                     AND i.invoice_date BETWEEN ? AND ?
                 `, [company_id, startDateStr, endDateStr]);
-    
-                // Inventory Shrinkage (placeholder - you may need to implement actual logic)
+
+                // Inventory Shrinkage - Calculate from adjustments for this specific month range
                 const [inventoryShrinkageResult] = await db.execute(`
-                    SELECT 0 as inventory_shrinkage
-                `);
-    
+                    SELECT 
+                        COALESCE(ABS(SUM(ia.adjustment_quantity * p.cost_price)), 0) as inventory_shrinkage
+                    FROM inventory_adjustments ia
+                    JOIN products p ON ia.product_id = p.id
+                    WHERE ia.company_id = ?
+                    AND ia.adjustment_quantity < 0
+                    AND DATE(ia.created_at) BETWEEN ? AND ?
+                `, [company_id, startDateStr, endDateStr]);
+
                 // Invoice Count for the month
                 const [invoiceCountResult] = await db.execute(`
                     SELECT 
@@ -345,7 +347,7 @@ class ReportController {
                     AND i.status != 'proforma'
                     AND i.invoice_date BETWEEN ? AND ?
                 `, [company_id, startDateStr, endDateStr]);
-    
+
                 // Extract values
                 const productIncome = parseFloat(productIncomeResult[0]?.product_income || 0);
                 const taxIncome = parseFloat(taxIncomeResult[0]?.tax_income || 0);
@@ -353,17 +355,17 @@ class ReportController {
                 const costOfSales = parseFloat(costOfSalesResult[0]?.cost_of_sales || 0);
                 const inventoryShrinkage = parseFloat(inventoryShrinkageResult[0]?.inventory_shrinkage || 0);
                 const invoiceCount = parseInt(invoiceCountResult[0]?.invoice_count || 0);
-    
+
                 // Calculate totals for the month
                 const totalIncome = productIncome + taxIncome;
                 const netIncome = totalIncome - discountsGiven;
                 const totalCostOfSales = costOfSales + inventoryShrinkage;
                 const grossProfit = netIncome - totalCostOfSales;
                 const grossProfitMargin = totalIncome > 0 ? (grossProfit / totalIncome) * 100 : 0;
-    
+
                 // Add to total inventory shrinkage
                 totalInventoryShrinkage += inventoryShrinkage;
-    
+
                 // Add month data to breakdown
                 monthlyBreakdown.push({
                     month: month,
@@ -387,16 +389,16 @@ class ReportController {
                     invoice_count: invoiceCount
                 });
             }
-    
+
             // Get company information
             const [companyResult] = await db.execute(`
                 SELECT name, address, email_address, contact_number, company_logo
                 FROM company
                 WHERE company_id = ?
             `, [company_id]);
-    
+
             const companyInfo = companyResult[0] || {};
-    
+
             // Prepare response data
             const profitAndLossData = {
                 year: selectedYear,
@@ -415,13 +417,13 @@ class ReportController {
                     generated_at: new Date().toISOString()
                 }
             };
-    
+
             return res.status(200).json({
                 success: true,
                 message: 'Monthly Profit and Loss data retrieved successfully',
                 data: profitAndLossData
             });
-    
+
         } catch (error) {
             console.error('Error in getMonthlyProfitAndLoss:', error);
             return res.status(500).json({
@@ -657,7 +659,7 @@ class ReportController {
                 sumExpression = 'COALESCE(SUM(CASE WHEN i.invoice_date >= ? AND i.invoice_date <= ? THEN i.total_amount ELSE 0 END), 0)';
                 paramsTotal = [companyId, start_date, end_date, employeeId];
             }
-    
+
             // Query to calculate total sales amount for a specific employee within a company (only paid/partially_paid)
             const totalSalesQuery = `
                 SELECT
@@ -674,14 +676,14 @@ class ReportController {
                 GROUP BY
                     e.id, e.name, e.email
             `;
-    
+
             let whereDate = '';
             let paramsInvoices = [companyId, employeeId, companyId];
             if (start_date && end_date) {
                 whereDate = ' AND i.invoice_date >= ? AND i.invoice_date <= ?';
                 paramsInvoices = [companyId, employeeId, companyId, start_date, end_date];
             }
-    
+
             // Query to fetch invoice details for the employee within a specific company (only paid/partially_paid)
             const invoicesQuery = `
                 SELECT
@@ -709,18 +711,18 @@ class ReportController {
                 ORDER BY
                     i.invoice_date DESC
             `;
-    
+
             // Execute the queries
             const [totalSalesResults] = await db.execute(totalSalesQuery, paramsTotal);
             const [invoicesResults] = await db.execute(invoicesQuery, paramsInvoices);
-    
+
             if (totalSalesResults.length === 0) {
                 return res.status(404).json({
                     success: false,
                     message: 'Employee not found or no sales data available for this company'
                 });
             }
-    
+
             const row = totalSalesResults[0];
             const salesReport = {
                 employeeId: row.employee_id,
@@ -740,7 +742,7 @@ class ReportController {
                     customerName: invoice.customer_name
                 }))
             };
-    
+
             // Send the response
             res.status(200).json({
                 success: true,
@@ -761,20 +763,20 @@ class ReportController {
         try {
             const { company_id } = req.params;
             const { start_date, end_date } = req.query;
-    
+
             if (!company_id) {
                 return res.status(400).json({
                     success: false,
                     message: 'Company ID is required'
                 });
             }
-    
+
             // Build date filter condition
             const today = new Date().toISOString().split('T')[0];
             const startOfYear = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
             let dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
             let dateParams = [startOfYear, today];
-    
+
             if (start_date && end_date) {
                 dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
                 dateParams = [start_date, end_date];
@@ -785,7 +787,7 @@ class ReportController {
                 dateCondition = 'AND i.invoice_date <= ?';
                 dateParams = [end_date];
             }
-    
+
             // 1. INCOME CALCULATIONS PER EMPLOYEE
             const [productIncomeResult] = await db.execute(`
                 SELECT 
@@ -801,7 +803,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY e.id, e.name
             `, [company_id, ...dateParams]);
-    
+
             const [discountsResult] = await db.execute(`
                 SELECT 
                     e.id AS employee_id,
@@ -815,7 +817,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY e.id, e.name
             `, [company_id, ...dateParams]);
-    
+
             const [taxIncomeResult] = await db.execute(`
                 SELECT 
                     e.id AS employee_id,
@@ -829,7 +831,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY e.id, e.name
             `, [company_id, ...dateParams]);
-    
+
             // 2. COST OF SALES CALCULATIONS PER EMPLOYEE
             const [costOfSalesResult] = await db.execute(`
                 SELECT 
@@ -846,7 +848,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY e.id, e.name
             `, [company_id, ...dateParams]);
-    
+
             // 3. ADDITIONAL METRICS PER EMPLOYEE
             const [totalPaidResult] = await db.execute(`
                 SELECT 
@@ -861,7 +863,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY e.id, e.name
             `, [company_id, ...dateParams]);
-    
+
             const [outstandingResult] = await db.execute(`
                 SELECT 
                     e.id AS employee_id,
@@ -875,14 +877,14 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY e.id, e.name
             `, [company_id, ...dateParams]);
-    
+
             // 4. GET COMPANY DETAILS
             const [companyResult] = await db.execute(`
                 SELECT name, address, email_address, contact_number
                 FROM company
                 WHERE company_id = ?
             `, [company_id]);
-    
+
             // Prepare data for all employees
             const employeeData = {};
             const resultsMap = {
@@ -893,7 +895,7 @@ class ReportController {
                 totalPaid: totalPaidResult,
                 outstanding: outstandingResult
             };
-    
+
             for (const [key, result] of Object.entries(resultsMap)) {
                 result.forEach(row => {
                     if (!employeeData[row.employee_id]) {
@@ -912,7 +914,7 @@ class ReportController {
                     if (key === 'outstanding') employeeData[row.employee_id].outstandingBalance = parseFloat(row.outstanding_balance || 0);
                 });
             }
-    
+
             const employees = Object.values(employeeData).map(emp => {
                 const totalIncome = emp.productIncome + emp.taxIncome;
                 const netIncome = totalIncome - emp.discountsGiven;
@@ -920,7 +922,7 @@ class ReportController {
                 const netEarnings = grossProfit;
                 const grossProfitMargin = totalIncome > 0 ? (grossProfit / totalIncome) * 100 : 0;
                 const netProfitMargin = totalIncome > 0 ? (netEarnings / totalIncome) * 100 : 0;
-    
+
                 return {
                     employee: {
                         id: emp.id,
@@ -953,9 +955,9 @@ class ReportController {
                     }
                 };
             });
-    
+
             const companyInfo = companyResult[0] || {};
-    
+
             return res.status(200).json({
                 success: true,
                 message: 'Profit and Loss data for all employees retrieved successfully',
@@ -975,7 +977,7 @@ class ReportController {
                     employees: employees
                 }
             });
-    
+
         } catch (error) {
             console.error('Error in getProfitAndLossForAllEmployees:', error);
             return res.status(500).json({
@@ -1036,20 +1038,20 @@ class ReportController {
         try {
             const { company_id } = req.params;
             const { start_date, end_date } = req.query;
-    
+
             if (!company_id) {
                 return res.status(400).json({
                     success: false,
                     message: 'Company ID is required'
                 });
             }
-    
+
             // Build date filter condition
             const today = new Date().toISOString().split('T')[0];
             const startOfYear = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
             let dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
             let dateParams = [startOfYear, today];
-    
+
             if (start_date && end_date) {
                 dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
                 dateParams = [start_date, end_date];
@@ -1060,7 +1062,7 @@ class ReportController {
                 dateCondition = 'AND i.invoice_date <= ?';
                 dateParams = [end_date];
             }
-    
+
             // 1. INCOME CALCULATIONS PER CUSTOMER
             const [productIncomeResult] = await db.execute(`
                 SELECT 
@@ -1078,7 +1080,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY c.id, c.name, c.email, c.phone
             `, [company_id, ...dateParams]);
-    
+
             const [discountsResult] = await db.execute(`
                 SELECT 
                     c.id AS customer_id,
@@ -1094,7 +1096,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY c.id, c.name, c.email, c.phone
             `, [company_id, ...dateParams]);
-    
+
             const [taxIncomeResult] = await db.execute(`
                 SELECT 
                     c.id AS customer_id,
@@ -1110,7 +1112,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY c.id, c.name, c.email, c.phone
             `, [company_id, ...dateParams]);
-    
+
             // 2. COST OF SALES CALCULATIONS PER CUSTOMER
             const [costOfSalesResult] = await db.execute(`
                 SELECT 
@@ -1129,7 +1131,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY c.id, c.name, c.email, c.phone
             `, [company_id, ...dateParams]);
-    
+
             // 3. ADDITIONAL METRICS PER CUSTOMER
             const [totalPaidResult] = await db.execute(`
                 SELECT 
@@ -1146,7 +1148,7 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY c.id, c.name, c.email, c.phone
             `, [company_id, ...dateParams]);
-    
+
             const [outstandingResult] = await db.execute(`
                 SELECT 
                     c.id AS customer_id,
@@ -1162,14 +1164,14 @@ class ReportController {
                 ${dateCondition}
                 GROUP BY c.id, c.name, c.email, c.phone
             `, [company_id, ...dateParams]);
-    
+
             // 4. GET COMPANY DETAILS
             const [companyResult] = await db.execute(`
                 SELECT name, address, email_address, contact_number
                 FROM company
                 WHERE company_id = ?
             `, [company_id]);
-    
+
             // Prepare data for all customers
             const customerData = {};
             const resultsMap = {
@@ -1180,7 +1182,7 @@ class ReportController {
                 totalPaid: totalPaidResult,
                 outstanding: outstandingResult
             };
-    
+
             for (const [key, result] of Object.entries(resultsMap)) {
                 result.forEach(row => {
                     if (!customerData[row.customer_id]) {
@@ -1199,7 +1201,7 @@ class ReportController {
                     if (key === 'outstanding') customerData[row.customer_id].outstandingBalance = parseFloat(row.outstanding_balance || 0);
                 });
             }
-    
+
             const customers = Object.values(customerData).map(customer => {
                 const totalIncome = customer.productIncome + customer.taxIncome;
                 const netIncome = totalIncome - customer.discountsGiven;
@@ -1207,7 +1209,7 @@ class ReportController {
                 const netEarnings = grossProfit;
                 const grossProfitMargin = totalIncome > 0 ? (grossProfit / totalIncome) * 100 : 0;
                 const netProfitMargin = totalIncome > 0 ? (netEarnings / totalIncome) * 100 : 0;
-    
+
                 return {
                     customer: {
                         id: customer.id,
@@ -1240,9 +1242,9 @@ class ReportController {
                     }
                 };
             });
-    
+
             const companyInfo = companyResult[0] || {};
-    
+
             return res.status(200).json({
                 success: true,
                 message: 'Profit and Loss data for all customers retrieved successfully',
@@ -1262,7 +1264,7 @@ class ReportController {
                     customers: customers
                 }
             });
-    
+
         } catch (error) {
             console.error('Error in getProfitAndLossForAllCustomers:', error);
             return res.status(500).json({
