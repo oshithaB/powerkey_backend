@@ -38,7 +38,7 @@ const upload = multer({
 const getProducts = async (req, res) => {
     try {
         const { company_id } = req.params;
-        
+
         if (!company_id) {
             return res.status(400).json({ success: false, message: 'Company ID is required' });
         }
@@ -67,7 +67,11 @@ const createProduct = async (req, res) => {
             return res.status(400).json({ success: false, message: err.message || 'File upload error' });
         }
 
+        const connection = await db.getConnection();
+
         try {
+            await connection.beginTransaction();
+
             const { company_id } = req.params;
             const {
                 sku,
@@ -83,8 +87,8 @@ const createProduct = async (req, res) => {
                 reorder_level,
                 order_quantity,
                 commission,
-                commission_type,  // Add this line
-                commission_input  // Add this line
+                commission_type,
+                commission_input
             } = req.body;
             const image = req.file ? `/Product_Uploads/${req.file.filename}` : null;
 
@@ -97,7 +101,7 @@ const createProduct = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Product name is required' });
             }
 
-            // Validate commission - Changed to allow any positive number (currency amount)
+            // Validate commission
             let validatedCommission = null;
             if (commission !== undefined && commission !== null && commission !== '') {
                 const commissionValue = parseFloat(commission);
@@ -108,18 +112,9 @@ const createProduct = async (req, res) => {
             }
 
             // Validate commission_type
-            const validatedCommissionType = commission_type && ['fixed', 'percentage'].includes(commission_type) 
-                ? commission_type 
+            const validatedCommissionType = commission_type && ['fixed', 'percentage'].includes(commission_type)
+                ? commission_type
                 : 'fixed';
-
-            // Validate commission_input
-            let validatedCommissionInput = null;
-            if (commission_input !== undefined && commission_input !== null && commission_input !== '') {
-                const commissionInputValue = parseFloat(commission_input);
-                if (!isNaN(commissionInputValue) && commissionInputValue >= 0) {
-                    validatedCommissionInput = commissionInputValue;
-                }
-            }
 
             // Validate numeric fields
             const validatedUnitPrice = unit_price ? parseFloat(unit_price) : 0;
@@ -129,42 +124,46 @@ const createProduct = async (req, res) => {
             const validatedReorderLevel = reorder_level ? parseInt(reorder_level) : 0;
             const validatedOrderQuantity = order_quantity ? parseInt(order_quantity) : 0;
 
-            if (isNaN(validatedUnitPrice) || isNaN(validatedCostPrice) || 
+            if (isNaN(validatedUnitPrice) || isNaN(validatedCostPrice) ||
                 isNaN(validatedQuantity) || isNaN(validatedReorderLevel) ||
                 isNaN(validateManualCount) || isNaN(validatedOrderQuantity)) {
                 return res.status(400).json({ success: false, message: 'Invalid numeric values provided' });
             }
 
-            // Check for existing SKU
+            // Check for existing SKU using connection
             if (sku) {
-                const [existingProduct] = await db.query(
+                const [existingProduct] = await connection.query(
                     'SELECT * FROM products WHERE company_id = ? AND sku = ?',
                     [company_id, sku]
                 );
 
                 if (existingProduct.length > 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Product with this SKU already exists' });
                 }
             }
 
-            // Validate referenced IDs
+            // Validate referenced IDs using connection
             if (category_id) {
-                const [category] = await db.query('SELECT id FROM product_categories WHERE id = ? AND company_id = ?', [category_id, company_id]);
+                const [category] = await connection.query('SELECT id FROM product_categories WHERE id = ? AND company_id = ?', [category_id, company_id]);
                 if (category.length === 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Invalid category ID' });
                 }
             }
 
             if (preferred_vendor_id) {
-                const [vendor] = await db.query('SELECT vendor_id FROM vendor WHERE vendor_id = ? AND company_id = ?', [preferred_vendor_id, company_id]);
+                const [vendor] = await connection.query('SELECT vendor_id FROM vendor WHERE vendor_id = ? AND company_id = ?', [preferred_vendor_id, company_id]);
                 if (vendor.length === 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Invalid vendor ID' });
                 }
             }
 
             if (added_employee_id) {
-                const [employee] = await db.query('SELECT id FROM employees WHERE id = ?', [added_employee_id]);
+                const [employee] = await connection.query('SELECT id FROM employees WHERE id = ?', [added_employee_id]);
                 if (employee.length === 0) {
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Invalid employee ID' });
                 }
             }
@@ -172,7 +171,7 @@ const createProduct = async (req, res) => {
             // Generate SKU if not provided
             let productSku = sku;
             if (!productSku) {
-                const [lastProduct] = await db.query(
+                const [lastProduct] = await connection.query(
                     'SELECT sku FROM products WHERE company_id = ? AND sku IS NOT NULL ORDER BY id DESC LIMIT 1',
                     [company_id]
                 );
@@ -188,7 +187,8 @@ const createProduct = async (req, res) => {
                 productSku = `PRD${String(skuNumber).padStart(3, '0')}`;
             }
 
-            const [result] = await db.query(
+            // Insert Product
+            const [result] = await connection.query(
                 `INSERT INTO products (
                     company_id, sku, name, image, description, category_id, 
                     preferred_vendor_id, added_employee_id, unit_price, cost_price, 
@@ -196,28 +196,79 @@ const createProduct = async (req, res) => {
                     commission, commission_type, is_active
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    company_id, 
-                    productSku, 
-                    name, 
-                    image, 
-                    description || null, 
+                    company_id,
+                    productSku,
+                    name,
+                    image,
+                    description || null,
                     category_id || null,
-                    preferred_vendor_id || null, 
-                    added_employee_id || null, 
-                    validatedUnitPrice, 
+                    preferred_vendor_id || null,
+                    added_employee_id || null,
+                    validatedUnitPrice,
                     validatedCostPrice,
-                    validatedQuantity, 
+                    validatedQuantity,
                     validateManualCount,
-                    validatedReorderLevel, 
+                    validatedReorderLevel,
                     validatedOrderQuantity,
-                    validatedCommission, 
-                    validatedCommissionType,  // Add this line
+                    validatedCommission,
+                    validatedCommissionType,
                     true
                 ]
             );
 
+            const productId = result.insertId;
+
+            // --- Handle Opening Stock Logic ---
+            if (validatedQuantity > 0) {
+                const orderNo = `OPENING-STK-${productId}-${Date.now()}`;
+                const currentDate = new Date().toISOString().split('T')[0];
+
+                // Create a system order for opening stock
+                const [orderResult] = await connection.query(
+                    `INSERT INTO orders (
+                        company_id, vendor_id, order_no, order_date, 
+                        total_amount, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                    [
+                        company_id,
+                        preferred_vendor_id || null,
+                        orderNo,
+                        currentDate,
+                        0, // Total amount is 0 for opening stock as it's already owned
+                        'closed' // Closed because stock is already in hand
+                    ]
+                );
+
+                const orderId = orderResult.insertId;
+
+                // Create order item
+                await connection.query(
+                    `INSERT INTO order_items (
+                        order_id, product_id, name, sku, description, 
+                        qty, rate, amount, 
+                        received, closed, remaining_qty, stock_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        orderId,
+                        productId,
+                        name,
+                        productSku,
+                        'Opening Stock',
+                        validatedQuantity,
+                        validatedCostPrice,
+                        0, // amount
+                        true, // received
+                        true, // closed
+                        validatedQuantity, // remaining_qty
+                        'in_stock'
+                    ]
+                );
+            }
+
+            await connection.commit();
+
             const productData = {
-                id: result.insertId,
+                id: productId,
                 company_id: parseInt(company_id),
                 sku: productSku,
                 name,
@@ -233,7 +284,7 @@ const createProduct = async (req, res) => {
                 reorder_level: validatedReorderLevel,
                 order_quantity: validatedOrderQuantity,
                 commission: validatedCommission,
-                commission_type: validatedCommissionType,  // Add this line
+                commission_type: validatedCommissionType,
                 is_active: true,
                 created_at: new Date()
             };
@@ -245,8 +296,11 @@ const createProduct = async (req, res) => {
             });
 
         } catch (error) {
+            await connection.rollback();
             console.error('Error creating product:', error);
             return res.status(500).json({ success: false, message: 'Internal server error' });
+        } finally {
+            connection.release();
         }
     });
 };
@@ -326,9 +380,9 @@ const updateProduct = async (req, res) => {
             }
 
             const allowedFields = [
-                'sku', 'name', 'image', 'description', 'category_id', 
-                'preferred_vendor_id', 'added_employee_id', 'unit_price', 
-                'cost_price', 'quantity_on_hand', 'manual_count', 'reorder_level', 
+                'sku', 'name', 'image', 'description', 'category_id',
+                'preferred_vendor_id', 'added_employee_id', 'unit_price',
+                'cost_price', 'quantity_on_hand', 'manual_count', 'reorder_level',
                 'order_quantity', 'commission', 'commission_type', 'is_active'  // Add commission_type here
             ];
 
