@@ -64,11 +64,15 @@ async function createTables(db) {
             otp_code varchar(10) DEFAULT NULL,
             otp_expiry datetime DEFAULT NULL,
             is_active BOOLEAN DEFAULT TRUE,
+            is_fixed_to_company BOOLEAN DEFAULT FALSE,
+            fixed_company_id INT DEFAULT NULL,
             PRIMARY KEY (user_id),
             UNIQUE KEY email (email),
             UNIQUE KEY username (username),
             KEY role_id (role_id),
-            CONSTRAINT user_ibfk_1 FOREIGN KEY (role_id) REFERENCES role (role_id)
+            KEY fixed_company_id (fixed_company_id),
+            CONSTRAINT user_ibfk_1 FOREIGN KEY (role_id) REFERENCES role (role_id),
+            CONSTRAINT user_ibfk_2 FOREIGN KEY (fixed_company_id) REFERENCES company (company_id) ON DELETE SET NULL
         )`,
 
         `CREATE TABLE IF NOT EXISTS customer (
@@ -558,6 +562,20 @@ async function createTables(db) {
     } catch (error) {
         // Ignore error if columns already modified or tables don't exist (though they should)
         console.warn('Migration for tax precision warning (safe to ignore if already updated):', error.message);
+    }
+
+    // --- MIGRATION FOR FIXED EMPLOYEE ---
+    try {
+        console.log('Checking and updating user table for fixed employee columns...');
+        const [columns] = await db.execute("SHOW COLUMNS FROM user LIKE 'is_fixed_to_company'");
+        if (columns.length === 0) {
+            await db.execute("ALTER TABLE user ADD COLUMN is_fixed_to_company BOOLEAN DEFAULT FALSE");
+            await db.execute("ALTER TABLE user ADD COLUMN fixed_company_id INT DEFAULT NULL");
+            await db.execute("ALTER TABLE user ADD CONSTRAINT fk_user_fixed_company FOREIGN KEY (fixed_company_id) REFERENCES company(company_id) ON DELETE SET NULL");
+            console.log('User table updated with fixed employee columns.');
+        }
+    } catch (error) {
+        console.warn('Migration for fixed employee warning:', error.message);
     }
 
     // Insert default roles and users
