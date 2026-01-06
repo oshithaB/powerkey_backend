@@ -134,7 +134,23 @@ const createCompany = async (req, res) => {
 const getCompanies = async (req, res) => {
     try {
         console.log('Get companies request received');
-        const [companies] = await db.query('SELECT * FROM company');
+
+        // Use req.userId from verifyToken middleware
+        const userId = req.userId;
+
+        // Check if user is fixed to a company
+        const [user] = await db.query('SELECT is_fixed_to_company, fixed_company_id FROM user WHERE user_id = ?', [userId]);
+
+        let companies;
+        if (user.length > 0 && user[0].is_fixed_to_company) {
+            // If user is fixed, only return that company
+            console.log(`User ${userId} is fixed to company ${user[0].fixed_company_id}`);
+            [companies] = await db.query('SELECT * FROM company WHERE company_id = ?', [user[0].fixed_company_id]);
+        } else {
+            // Otherwise return all companies
+            [companies] = await db.query('SELECT * FROM company');
+        }
+
         console.log('Companies fetched:', companies);
         return res.status(200).json(companies);
     } catch (error) {

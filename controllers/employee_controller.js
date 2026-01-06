@@ -16,7 +16,7 @@ const getUserByEmployeeId = async (req, res) => {
         const { id } = req.params;
         const [user] = await db.query(
             `SELECT
-                u.user_id, u.username, u.role_id, e.email
+                u.user_id, u.username, u.role_id, e.email, u.is_fixed_to_company, u.fixed_company_id
                 FROM user u
                 JOIN employees e ON u.email = e.email
                 WHERE u.is_active = 1
@@ -35,7 +35,7 @@ const getUserByEmployeeId = async (req, res) => {
 
 const createEmployee = async (req, res) => {
     try {
-        const { name, email, address, phone, hire_date, role_id, username, password } = req.body;
+        const { name, email, address, phone, hire_date, role_id, username, password, isFixed, fixedCompanyId } = req.body;
 
         // Validate required fields
         if (!name || name.trim() === '') {
@@ -50,10 +50,13 @@ const createEmployee = async (req, res) => {
         if ((username && password) && !role_id) {
             return res.status(400).json({ success: false, message: 'Role is required when creating user credentials' });
         }
+        if (isFixed && !fixedCompanyId) {
+            return res.status(400).json({ success: false, message: 'Fixed Company ID is required when employee is marked as fixed' });
+        }
 
         // Check if employee already exists by email
         const [existingEmployee] = await db.query(
-            'SELECT * FROM employees WHERE email = ? AND is_active = 1', 
+            'SELECT * FROM employees WHERE email = ? AND is_active = 1',
             [email]
         );
 
@@ -94,14 +97,14 @@ const createEmployee = async (req, res) => {
         if (username && password) {
             const hashedPassword = await bcrypt.hash(password, 10);
             await db.query(
-                'INSERT INTO user (role_id, full_name, username, email, password_hash, is_active) VALUES (?, ?, ?, ?, ?, ?)',
-                [ role_id, name, username, email || null, hashedPassword, true]
+                'INSERT INTO user (role_id, full_name, username, email, password_hash, is_active, is_fixed_to_company, fixed_company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [role_id, name, username, email || null, hashedPassword, true, isFixed ? 1 : 0, isFixed ? fixedCompanyId : null]
             );
         }
 
-        return res.status(201).json({ 
-            success: true, 
-            message: 'Employee created successfully', 
+        return res.status(201).json({
+            success: true,
+            message: 'Employee created successfully',
             employee: employeeData
         });
 
@@ -139,10 +142,12 @@ const updateEmployee = async (req, res) => {
         if ((username && password) && !role_id) {
             return res.status(400).json({ success: false, message: 'Role is required when updating user credentials' });
         }
+        // Extract isFixed and fixedCompanyId from request body, defaulting to undefined if not provided
+        const { isFixed, fixedCompanyId } = req.body;
 
         // Check if employee exists
         const [existingEmployee] = await db.query(
-            'SELECT * FROM employees WHERE id = ? AND is_active = 1', 
+            'SELECT * FROM employees WHERE id = ? AND is_active = 1',
             [id]
         );
 
@@ -153,7 +158,7 @@ const updateEmployee = async (req, res) => {
         // Check for email uniqueness in employees table (check all records, not just active)
         if (email) {
             const [emailCheck] = await db.query(
-                'SELECT * FROM employees WHERE email = ? AND id != ?', 
+                'SELECT * FROM employees WHERE email = ? AND id != ?',
                 [email, id]
             );
             if (emailCheck.length > 0) {
@@ -204,20 +209,33 @@ const updateEmployee = async (req, res) => {
             const hashedPassword = await bcrypt.hash(password, 10);
             if (userExists) {
                 await db.query(
-                    'UPDATE user SET role_id = ?, full_name = ?, username = ?, email = ?, password_hash = ?, is_active = ? WHERE user_id = ?',
-                    [role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true, id]
+                    'UPDATE user SET role_id = ?, full_name = ?, username = ?, email = ?, password_hash = ?, is_active = ?, is_fixed_to_company = ?, fixed_company_id = ? WHERE user_id = ?',
+                    [
+                        role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true,
+                        isFixed !== undefined ? (isFixed ? 1 : 0) : currentUser[0].is_fixed_to_company,
+                        isFixed !== undefined ? (isFixed ? fixedCompanyId : null) : currentUser[0].fixed_company_id,
+                        id
+                    ]
                 );
             } else {
                 await db.query(
-                    'INSERT INTO user (user_id, role_id, full_name, username, email, password_hash, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [id, role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true]
+                    'INSERT INTO user (user_id, role_id, full_name, username, email, password_hash, is_active, is_fixed_to_company, fixed_company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [id, role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true, isFixed ? 1 : 0, isFixed ? fixedCompanyId : null]
                 );
             }
-        } else if (userExists && (email || role_id !== undefined)) {
-            // Update user details without changing password if user exists and email or role_id is provided
+        } else if (userExists && (email || role_id !== undefined || isFixed !== undefined)) {
+            // Update user details without changing password if user exists and relevant fields are provided
             await db.query(
-                'UPDATE user SET full_name = ?, email = ?, role_id = ?, is_active = ? WHERE user_id = ?',
-                [name, email || null, role_id || currentUser[0].role_id, is_active !== undefined ? is_active : true, id]
+                'UPDATE user SET full_name = ?, email = ?, role_id = ?, is_active = ?, is_fixed_to_company = ?, fixed_company_id = ? WHERE user_id = ?',
+                [
+                    name,
+                    email || null,
+                    role_id || currentUser[0].role_id,
+                    is_active !== undefined ? is_active : true,
+                    isFixed !== undefined ? (isFixed ? 1 : 0) : currentUser[0].is_fixed_to_company,
+                    isFixed !== undefined ? (isFixed ? fixedCompanyId : null) : currentUser[0].fixed_company_id,
+                    id
+                ]
             );
         }
 
@@ -232,8 +250,8 @@ const updateEmployee = async (req, res) => {
             created_at: existingEmployee[0].created_at
         };
 
-        return res.status(200).json({ 
-            success: true, 
+        return res.status(200).json({
+            success: true,
             message: 'Employee updated successfully',
             employee: employeeData
         });
@@ -250,7 +268,7 @@ const deleteEmployee = async (req, res) => {
 
         // Check if employee exists
         const [existingEmployee] = await db.query(
-            'SELECT * FROM employees WHERE id = ? AND is_active = 1', 
+            'SELECT * FROM employees WHERE id = ? AND is_active = 1',
             [id]
         );
 
@@ -271,8 +289,8 @@ const deleteEmployee = async (req, res) => {
             await db.query('DELETE FROM user WHERE user_id = ?', [id]);
         }
 
-        return res.status(200).json({ 
-            success: true, 
+        return res.status(200).json({
+            success: true,
             message: 'Employee deleted successfully'
         });
 
@@ -282,7 +300,7 @@ const deleteEmployee = async (req, res) => {
     }
 };
 
-module.exports = { 
+module.exports = {
     createEmployee,
     getEmployees,
     updateEmployee,
