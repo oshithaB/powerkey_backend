@@ -24,26 +24,26 @@ const getOrders = async (req, res) => {
 const getOrder = async (req, res) => {
     const { companyId, orderId } = req.params;
     try {
-      const [order] = await db.execute(
-        `SELECT o.id, v.name AS supplier, o.order_no, o.order_date, o.category_name AS category, o.class, o.location, o.total_amount, o.status, o.created_at, o.mailling_address, o.email, o.customer_id, o.shipping_address, o.ship_via, e.name AS employee_name, o.vendor_id
+        const [order] = await db.execute(
+            `SELECT o.id, v.name AS supplier, o.order_no, o.order_date, o.category_name AS category, o.class, o.location, o.total_amount, o.status, o.created_at, o.mailling_address, o.email, o.customer_id, o.shipping_address, o.ship_via, e.name AS employee_name, o.vendor_id
          FROM orders o
          LEFT JOIN employees e ON o.class = e.id
          LEFT JOIN vendor v ON o.vendor_id = v.vendor_id
          WHERE o.company_id = ? AND o.id = ?`,
-        [companyId, orderId]
-      );
-      if (order.length === 0) {
-        return res.status(404).json({ message: 'Order not found' });
-      }
-      res.json(order[0]);
+            [companyId, orderId]
+        );
+        if (order.length === 0) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        res.json(order[0]);
     } catch (error) {
-      console.error('Error fetching order:', error);
-      res.status(500).json({ message: 'Failed to fetch order' });
+        console.error('Error fetching order:', error);
+        res.status(500).json({ message: 'Failed to fetch order' });
     }
-  };
+};
 
 // Fetch all order items for a company
-const getOrderItems = async (req, res) => { 
+const getOrderItems = async (req, res) => {
     const { companyId } = req.params;
     try {
         const [orderItems] = await db.execute(
@@ -224,7 +224,7 @@ const updateOrder = async (req, res) => {
                     `INSERT INTO order_items (
                         order_id, product_id, name, sku, description, qty, rate, amount, class, received, closed
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [ 
+                    [
                         orderId,
                         product_id || null,
                         name,
@@ -252,6 +252,8 @@ const updateOrder = async (req, res) => {
         }
 
         // Update product quantity in inventory if status is 'closed'
+        // Stock update logic moved to Bill creation as per user request
+        /*
         if (status === 'closed') {
             const [orderItems] = await connection.execute(
                 'SELECT product_id, qty, rate FROM order_items WHERE order_id = ?',
@@ -270,6 +272,7 @@ const updateOrder = async (req, res) => {
                 ['in_stock', orderId]
             );
         }
+        */
 
         await connection.commit();
         res.json({ message: 'Order updated successfully' });
@@ -413,5 +416,5 @@ module.exports = {
     deleteOrder,
     deleteOrderItems,
     getPurchaseStats,
-    getOrderItemsByOrder 
+    getOrderItemsByOrder
 };

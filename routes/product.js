@@ -13,9 +13,11 @@ const {
     getEmployees
 } = require('../controllers/product_controller');
 
-router.get('/getProducts/:company_id', verifyToken, getProducts);
+// Everyone (including store_keeper) needs access to view products
+router.get('/getProducts/:company_id', verifyToken, authorizedRoles(['admin', 'sale', 'staff', 'store_keeper']), getProducts);
 
-router.post('/products/:company_id', verifyToken, authorizedRoles(['admin']), createProduct);
+// Staff can CREATE but NOT EDIT or DELETE
+router.post('/products/:company_id', verifyToken, authorizedRoles(['admin', 'staff']), createProduct);
 router.put('/products/:company_id/:product_id', verifyToken, authorizedRoles(['admin']), updateProduct);
 router.delete('/products/:company_id/:product_id', verifyToken, authorizedRoles(['admin']), deleteProduct);
 

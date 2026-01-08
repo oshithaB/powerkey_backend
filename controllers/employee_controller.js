@@ -35,7 +35,7 @@ const getUserByEmployeeId = async (req, res) => {
 
 const createEmployee = async (req, res) => {
     try {
-        const { name, email, address, phone, hire_date, role_id, username, password, isFixed, fixedCompanyId } = req.body;
+        const { name, email, address, phone, hire_date, role_id, username, password, is_fixed_to_company, fixed_company_id } = req.body;
 
         // Validate required fields
         if (!name || name.trim() === '') {
@@ -50,7 +50,7 @@ const createEmployee = async (req, res) => {
         if ((username && password) && !role_id) {
             return res.status(400).json({ success: false, message: 'Role is required when creating user credentials' });
         }
-        if (isFixed && !fixedCompanyId) {
+        if (is_fixed_to_company && !fixed_company_id) {
             return res.status(400).json({ success: false, message: 'Fixed Company ID is required when employee is marked as fixed' });
         }
 
@@ -98,7 +98,7 @@ const createEmployee = async (req, res) => {
             const hashedPassword = await bcrypt.hash(password, 10);
             await db.query(
                 'INSERT INTO user (role_id, full_name, username, email, password_hash, is_active, is_fixed_to_company, fixed_company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [role_id, name, username, email || null, hashedPassword, true, isFixed ? 1 : 0, isFixed ? fixedCompanyId : null]
+                [role_id, name, username, email || null, hashedPassword, true, is_fixed_to_company ? 1 : 0, is_fixed_to_company ? fixed_company_id : null]
             );
         }
 
@@ -127,7 +127,7 @@ const getEmployees = async (req, res) => {
 const updateEmployee = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, phone, address, hire_date, is_active, username, password, role_id } = req.body;
+        const { name, email, phone, address, hire_date, is_active, username, password, role_id, is_fixed_to_company, fixed_company_id } = req.body;
 
         // Validate required fields
         if (!name || name.trim() === '') {
@@ -142,8 +142,8 @@ const updateEmployee = async (req, res) => {
         if ((username && password) && !role_id) {
             return res.status(400).json({ success: false, message: 'Role is required when updating user credentials' });
         }
-        // Extract isFixed and fixedCompanyId from request body, defaulting to undefined if not provided
-        const { isFixed, fixedCompanyId } = req.body;
+        // Extract is_fixed_to_company and fixed_company_id from request body
+        // const { is_fixed_to_company, fixed_company_id } = req.body; // Already destructured above
 
         // Check if employee exists
         const [existingEmployee] = await db.query(
@@ -212,18 +212,18 @@ const updateEmployee = async (req, res) => {
                     'UPDATE user SET role_id = ?, full_name = ?, username = ?, email = ?, password_hash = ?, is_active = ?, is_fixed_to_company = ?, fixed_company_id = ? WHERE user_id = ?',
                     [
                         role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true,
-                        isFixed !== undefined ? (isFixed ? 1 : 0) : currentUser[0].is_fixed_to_company,
-                        isFixed !== undefined ? (isFixed ? fixedCompanyId : null) : currentUser[0].fixed_company_id,
+                        is_fixed_to_company !== undefined ? (is_fixed_to_company ? 1 : 0) : currentUser[0].is_fixed_to_company,
+                        is_fixed_to_company !== undefined ? (is_fixed_to_company ? fixed_company_id : null) : currentUser[0].fixed_company_id,
                         id
                     ]
                 );
             } else {
                 await db.query(
                     'INSERT INTO user (user_id, role_id, full_name, username, email, password_hash, is_active, is_fixed_to_company, fixed_company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    [id, role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true, isFixed ? 1 : 0, isFixed ? fixedCompanyId : null]
+                    [id, role_id, name, username, email || null, hashedPassword, is_active !== undefined ? is_active : true, is_fixed_to_company ? 1 : 0, is_fixed_to_company ? fixed_company_id : null]
                 );
             }
-        } else if (userExists && (email || role_id !== undefined || isFixed !== undefined)) {
+        } else if (userExists && (email || role_id !== undefined || is_fixed_to_company !== undefined)) {
             // Update user details without changing password if user exists and relevant fields are provided
             await db.query(
                 'UPDATE user SET full_name = ?, email = ?, role_id = ?, is_active = ?, is_fixed_to_company = ?, fixed_company_id = ? WHERE user_id = ?',
@@ -232,8 +232,8 @@ const updateEmployee = async (req, res) => {
                     email || null,
                     role_id || currentUser[0].role_id,
                     is_active !== undefined ? is_active : true,
-                    isFixed !== undefined ? (isFixed ? 1 : 0) : currentUser[0].is_fixed_to_company,
-                    isFixed !== undefined ? (isFixed ? fixedCompanyId : null) : currentUser[0].fixed_company_id,
+                    is_fixed_to_company !== undefined ? (is_fixed_to_company ? 1 : 0) : currentUser[0].is_fixed_to_company,
+                    is_fixed_to_company !== undefined ? (is_fixed_to_company ? fixed_company_id : null) : currentUser[0].fixed_company_id,
                     id
                 ]
             );
