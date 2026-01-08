@@ -53,17 +53,17 @@ const createBill = async (req, res) => {
       const quantity = Number(item.quantity) || 0;
       const costPrice = Number(item.cost_price) || 0; // Using cost_price from frontend
       const taxRate = Number(item.tax_rate) || 0;
-      
+
       // Calculate actual unit price (price before tax)
       const actualUnitPrice = Number((costPrice / (1 + taxRate / 100)).toFixed(2));
       const taxAmount = Number((actualUnitPrice * quantity * taxRate / 100).toFixed(2));
       const totalPrice = Number((quantity * costPrice).toFixed(2));
-      
-      return { 
-        ...item, 
+
+      return {
+        ...item,
         actual_unit_price: actualUnitPrice,
         tax_amount: taxAmount,
-        total_price: totalPrice 
+        total_price: totalPrice
       };
     });
 
@@ -125,7 +125,65 @@ const createBill = async (req, res) => {
         itemParams
       );
     }
-    
+
+    // --- STOCK UPDATE LOGIC (Moved from Order to Bill) ---
+    // 1. Update Product Inventory
+    for (const item of recalculatedItems) {
+      if (item.product_id) {
+        await conn.execute(
+          'UPDATE products SET quantity_on_hand = quantity_on_hand + ?, cost_price = ? WHERE id = ? AND company_id = ?',
+          [Number(item.quantity) || 0, Number(item.cost_price || item.unit_price) || 0, item.product_id, company_id]
+        );
+      }
+    }
+
+    // 2. Create System Order for FIFO Tracking
+    // We create a dummy "Closed" order to hold the stock batches (order_items)
+    const stockOrderNo = `BILL-STK-${billId}-${Date.now()}`;
+    const [stockOrderResult] = await conn.execute(
+      `INSERT INTO orders (
+            company_id, vendor_id, order_no, order_date, total_amount, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        company_id,
+        vendor_id || null, // Associate with vendor if available
+        stockOrderNo,
+        bill_date,
+        calculatedTotal,
+        'closed' // Automatically closed as stock is received
+      ]
+    );
+    const stockOrderId = stockOrderResult.insertId;
+
+    // 3. Create Order Items for FIFO
+    for (const item of recalculatedItems) {
+      if (item.product_id) {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.cost_price || item.unit_price) || 0;
+
+        await conn.execute(
+          `INSERT INTO order_items (
+                    order_id, product_id, name, sku, description, qty, rate, amount, 
+                    received, closed, remaining_qty, stock_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            stockOrderId,
+            item.product_id,
+            item.product_name || '',
+            '', // sku not always available in bill item, strictly not needed for FIFO id
+            `Stock from Bill #${bill_number}`,
+            qty,
+            rate,
+            Number(item.total_price) || 0,
+            true, // received
+            true, // closed
+            qty, // remaining_qty starts at full qty
+            'in_stock' // This enables FIFO usage
+          ]
+        );
+      }
+    }
+
     await conn.commit();
     res.status(201).json({ message: "Bill created successfully", billId });
   } catch (error) {
@@ -138,11 +196,11 @@ const createBill = async (req, res) => {
 };
 
 const getAllBills = async (req, res) => {
-    const { company_id } = req.params;
+  const { company_id } = req.params;
 
-    try {
-        const [bills] = await db.query(
-            `SELECT b.*,
+  try {
+    const [bills] = await db.query(
+      `SELECT b.*,
             pm.name AS payment_method,
             v.name AS vendor_name,
             o.order_no AS order_number,
@@ -154,67 +212,67 @@ const getAllBills = async (req, res) => {
             LEFT JOIN employees emp ON b.employee_id = emp.id
             WHERE b.company_id = ?
             ORDER BY b.created_at DESC`,
-            [company_id]
-        );
+      [company_id]
+    );
 
-        // Format dates to prevent timezone issues
-        const formattedBills = bills.map(bill => ({
-            ...bill,
-            bill_date: bill.bill_date ? bill.bill_date : null,
-            due_date: bill.due_date ? bill.due_date : null,
-            created_at: bill.created_at
-        }));
+    // Format dates to prevent timezone issues
+    const formattedBills = bills.map(bill => ({
+      ...bill,
+      bill_date: bill.bill_date ? bill.bill_date : null,
+      due_date: bill.due_date ? bill.due_date : null,
+      created_at: bill.created_at
+    }));
 
-        console.log(`Formatted bills for company_id ${company_id}:`, formattedBills);
+    console.log(`Formatted bills for company_id ${company_id}:`, formattedBills);
 
-        res.json(formattedBills);
-    } catch (error) {
-        console.error('Error fetching bills:', error);
-        res.status(500).json({ error: "Failed to fetch bills" });
-    }
+    res.json(formattedBills);
+  } catch (error) {
+    console.error('Error fetching bills:', error);
+    res.status(500).json({ error: "Failed to fetch bills" });
+  }
 };
 
 const getBillItemsById = async (req, res) => {
-    const { company_id, bill_id } = req.params;
+  const { company_id, bill_id } = req.params;
 
-    try {
-        const [bill] = await db.query(
-            `SELECT * FROM bills WHERE company_id = ? AND id = ?`,
-            [company_id, bill_id]
-        );
+  try {
+    const [bill] = await db.query(
+      `SELECT * FROM bills WHERE company_id = ? AND id = ?`,
+      [company_id, bill_id]
+    );
 
-        if (bill.length === 0) {
-            return res.status(404).json({ error: "Bill not found" });
-        }
-
-        const [items] = await db.query(
-            `SELECT * FROM bill_items WHERE bill_id = ?`,
-            [bill_id]
-        );
-
-        console.log(`Fetched items for bill_id ${bill_id} of company_id ${company_id}:`, items);
-
-        res.json(items);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Failed to fetch bill" });
+    if (bill.length === 0) {
+      return res.status(404).json({ error: "Bill not found" });
     }
+
+    const [items] = await db.query(
+      `SELECT * FROM bill_items WHERE bill_id = ?`,
+      [bill_id]
+    );
+
+    console.log(`Fetched items for bill_id ${bill_id} of company_id ${company_id}:`, items);
+
+    res.json(items);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch bill" });
+  }
 }
 
 const updateBill = async (req, res) => {
-    const { company_id, bill_id } = req.params;
+  const { company_id, bill_id } = req.params;
 
-    console.log("Received updateBill request for company_id:", company_id, "bill_id:", bill_id);
+  console.log("Received updateBill request for company_id:", company_id, "bill_id:", bill_id);
 
-    const {
-      vendor_id,
-      order_id,
-      payment_method_id,
-      employee_id,
-      due_date,
-      notes,
-      total_amount,
-      items,
+  const {
+    vendor_id,
+    order_id,
+    payment_method_id,
+    employee_id,
+    due_date,
+    notes,
+    total_amount,
+    items,
   } = req.body;
 
   console.log("Updating bill with data:", req.body);
@@ -303,7 +361,7 @@ const getBillsByVendor = async (req, res) => {
       const currentDate = new Date();
       for (const bill of bills) {
         const dueDate = new Date(bill.due_date);
-        
+
         // Only update status to overdue if NOT proforma
         if (
           bill.status !== 'proforma' &&
@@ -393,7 +451,7 @@ const recordPayment = async (req, res) => {
           WHERE id = ? AND company_id = ? AND vendor_id = ?`,
         [bill_id, company_id, vendor_id]
       );
-      
+
       if (bill.length === 0) {
         await connection.rollback();
         return res.status(404).json({ error: `Bill ${bill_id} not found` });
@@ -403,17 +461,17 @@ const recordPayment = async (req, res) => {
       const totalAmount = Number(bill[0].total_amount) || 0;
       const balanceDue = totalAmount - newPaidAmount;
       let status = bill[0].status;
-      
+
       // Only update status if the invoice is NOT proforma
       if (status !== 'proforma') {
         status = 'opened';
-      
+
         if (newPaidAmount >= totalAmount) {
           status = 'paid';
         } else if (newPaidAmount > 0) {
           status = 'partially_paid';
         }
-      
+
         const dueDate = new Date(bill[0].due_date);
         if (
           status !== 'paid' &&
@@ -424,14 +482,14 @@ const recordPayment = async (req, res) => {
           status = 'overdue';
         }
       }
-      
+
       // Insert payment
       await connection.query(
         `INSERT INTO bill_payments (bill_id, vendor_id, company_id, payment_amount, payment_date, payment_method, deposit_to, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [bill_id, vendor_id, company_id, billPaymentAmount, payment_date, payment_method, deposit_to, notes || null]
       );
-      
+
       // Update vendor balance
       await connection.query(
         `UPDATE vendor
@@ -439,7 +497,7 @@ const recordPayment = async (req, res) => {
           WHERE vendor_id = ? AND company_id = ?`,
         [billPaymentAmount, vendor_id, company_id]
       );
-      
+
       // Update bill
       await connection.query(
         `UPDATE bills

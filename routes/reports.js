@@ -145,56 +145,56 @@ const {
 router.get(
     '/profit-and-loss/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getProfitAndLossData
 );
 
 router.get(
     '/monthly-profit-and-loss/:company_id/:year',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getMonthlyProfitAndLoss
 );
 
 router.get(
     '/profit-and-loss-by-emp/:company_id/:employee_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getProfitAndLossByEmployeeId
 );
 
 router.get(
     '/invoices-by-employee/:company_id/:employee_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getInvoicesByEmployeeId
 );
 
 router.get(
     '/profit-and-loss-by-cust/:company_id/:customer_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getProfitAndLossByCustomerId
 );
 
 router.get(
     '/profit-and-loss-all-employees/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getProfitAndLossForAllEmployees
 );
 
 router.get(
     '/inventory-shrinkage/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getInventoryShrinkageByCompanyId
 );
 
 router.get(
     '/profit-and-loss-all-customers/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getProfitAndLossForAllCustomers
 );
 
@@ -202,29 +202,29 @@ router.get(
 router.get(
     '/commission-report',
     verifyToken,
-    authorizedRoles(['admin', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCommissionReport
 );
 
 router.get(
     '/commission-report/:employeeId',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sale']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCommissionReportByEmployeeId
 );
 
 // Sales Report Route ====================================================================================================
-router.get (
+router.get(
     '/sales-report',
     verifyToken,
-    authorizedRoles(['admin', 'manager', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesReport
 );
 
-router.get (
+router.get(
     '/sales-report/:employeeId',
     verifyToken,
-    authorizedRoles(['admin', 'manager', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesReportByEmployeeId
 );
 
@@ -232,14 +232,14 @@ router.get (
 router.get(
     '/balance-sheet/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getBalanceSheetData
 );
 
 router.get(
     '/formatted-balance-sheet/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getFormattedBalanceSheet
 );
 
@@ -247,49 +247,49 @@ router.get(
 router.get(
     '/ar-aging-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'manager', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getARAgingSummary
 );
 
 router.get(
     '/customer-invoices/:company_id/:customer_id',
     verifyToken,
-    authorizedRoles(['admin', 'manager', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCustomerInvoices
 );
 
 router.get(
     '/ar-aging-summary-details/:customer_id/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'manager', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getARAgingSummaryInDetails
 );
 
 router.get(
     '/open-invoices/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getOpenInvoices
 );
 
 router.get(
     '/invoice-list/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getInvoiceList
 );
 
 router.get(
     '/customer-balance-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCustomerBalanceSummary
 );
 
 router.get(
     '/customer-balance-detail/:company_id/:customer_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCustomerBalanceDetail
 );
 
@@ -297,42 +297,42 @@ router.get(
 router.get(
     '/supplier-balance-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSupplierBalanceSummary
 );
 
 router.get(
     '/supplier-balance-detail/:company_id/:vendor_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSupplierBalanceDetail
 );
 
 router.get(
     '/ap-aging-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getAPAgingSummary
 );
 
 router.get(
     '/bill-and-applied-payments/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     billAndAppliedPayments
 );
 
 router.get(
     '/ap-aging-summary-details/:vendor_id/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getAPAgingSummaryInDetails
 );
 
 router.get(
     '/unpaid-bills/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     unpaidBills
 );
 
@@ -341,70 +341,70 @@ router.get(
 router.get(
     '/vendor-contacts/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getVendorsContactDetails
 );
 
 router.get(
     '/cheque-details/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getChequeDetails
 );
 
 router.get(
     '/purchases-by-product-service-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getPurchasesByProductServiceSummary
 );
 
 router.get(
     '/purchases-by-class-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getPurchasesByClassDetail
 );
 
 router.get(
     '/open-purchase-orders-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getOpenPurchaseOrdersDetail
 );
 
 router.get(
     '/purchase-list/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getPurchaseList
 );
 
 router.get(
     '/purchases-by-supplier-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getPurchasesBySupplierSummary
 );
 
 router.get(
     '/open-purchase-orders-list/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getOpenPurchaseOrdersList
 );
 
 router.get(
     '/expense-by-supplier-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getExpenseBySupplierSummary
 );
 
 router.get(
     '/expense-by-supplier-detail/:company_id/:payee_id',
     verifyToken,
-    authorizedRoles(['admin', 'staff', 'sales']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getExpenseBySupplierDetail
 );
 
@@ -413,140 +413,140 @@ router.get(
 router.get(
     '/customer-contacts/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCustomerContacts
 );
 
 router.get(
     '/sales-by-employee-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByEmployeeSummary
 );
 
 router.get(
     '/sales-by-customer-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByCustomerSummary
 );
 
 router.get(
     '/sales-by-customer-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByCustomerDetail
 );
 
 router.get(
     '/sales-by-employee-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByEmployeeDetail
 );
 
 router.get(
     '/deposit-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getDepositDetail
 );
 
 router.get(
     '/estimates-by-customer/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getEstimatesByCustomer
 );
 
 router.get(
     '/inventory-valuation-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getInventoryValuationSummary
 );
 
 router.get(
     '/inventory-valuation-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getInventoryValuationDetail
 );
 
 router.get(
     '/payment-methods/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getPaymentMethodList
 );
 
 router.get(
     '/stock-take-worksheet/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getStockTakeWorksheet
 );
 
 router.put(
     '/update-product-manual-count/:company_id/:product_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     updateProductManualCount
 );
 
 router.get(
     '/time-activities-by-customer-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getTimeActivitiesByCustomerDetail
 );
 
 router.get(
     '/transaction-list-by-customer/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getTransactionListByCustomer
 );
 
 router.get(
     '/product-service-list/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getProductServiceList
 );
 
 router.get(
     '/sales-by-product-service-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByProductServiceSummary
 );
 
 router.get(
     '/sales-by-product-service-detail/:company_id/:product_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByProductServiceDetail
 );
 
 router.get(
     '/income-by-customer-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getIncomeByCustomerSummary
 );
 
 router.get(
     '/customer-phone-list/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getCustomerPhoneList
 );
 
 router.get(
     '/sales-by-customerid-detail/:company_id/:customer_id',
     verifyToken,
-    authorizedRoles(['admin', 'sales', 'staff']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByCustomerIDDetail
 );
 
@@ -554,56 +554,56 @@ router.get(
 router.get(
     '/sscl-100percent-tax-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     SSCL100percentTaxDetail
 );
 
 router.get(
     '/vat-18percent-tax-detail/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     VAT18percentTaxDetail
 );
 
 router.get(
     '/sscl-100percent-tax-exception/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     SSCL100percentTaxException
 );
 
 router.get(
     '/vat-18percent-tax-exception/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     VAT18percentTaxException
 );
 
 router.get(
     '/sscl-100percent-tax-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     SSCL100percentTaxSummary
 );
 
 router.get(
     '/vat-18percent-tax-summary/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     VAT18percentTaxSummary
 );
 
 router.get(
     '/tax-liability-report/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     taxLiabilityReport
 );
 
 router.get(
     '/transaction-detail-by-tax-code/:company_id',
     verifyToken,
-    authorizedRoles(['admin', 'accountant']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     transactionDetailByTaxCode
 );
 
@@ -611,7 +611,7 @@ router.get(
 router.get(
     '/employee-contacts',
     verifyToken,
-    authorizedRoles(['admin', 'manager', 'hr']),
+    authorizedRoles(['admin', 'staff', 'accountant']),
     getEmployeeContacts
 );
 

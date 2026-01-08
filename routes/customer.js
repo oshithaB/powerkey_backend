@@ -11,8 +11,9 @@ const {
 } = require('../controllers/customer_controller');
 
 router.get('/getCustomers/:company_id', verifyToken, getCustomers);
-router.post('/createCustomers/:company_id', verifyToken, authorizedRoles(['admin']), createCustomer);
-router.put('/updateCustomers/:company_id/:customer_id', verifyToken, authorizedRoles(['admin']), updateCustomer);
+// Staff can CREATE but NOT EDIT or DELETE
+router.post('/createCustomers/:company_id', verifyToken, authorizedRoles(['admin', 'sale', 'staff']), createCustomer);
+router.put('/updateCustomers/:company_id/:customer_id', verifyToken, authorizedRoles(['admin', 'sale']), updateCustomer);
 router.put('/deleteCustomers/:company_id/:customer_id', verifyToken, authorizedRoles(['admin']), softDeleteCustomer);
 
 module.exports = router;

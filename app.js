@@ -104,11 +104,8 @@ app.use("/api", require("./routes/cheque"));
 app.use("/api", require("./routes/charts"));
 app.use("/api", require("./routes/bill"));
 
-/* =========================
-   SOCKET STATE
-========================= */
-const editingEstimates = {};
-const editingInvoices = {};
+// Socket state is now managed by lockStore
+const lockStore = require('./utils/lockStore');
 
 /* =========================
    SOCKET EVENTS
@@ -116,27 +113,27 @@ const editingInvoices = {};
 io.on("connection", (socket) => {
   socket.join("common_room");
 
-  socket.emit("locked_estimates", editingEstimates);
-  socket.emit("locked_invoices", editingInvoices);
+  socket.emit("locked_estimates", lockStore.getAllLocks('estimate'));
+  socket.emit("locked_invoices", lockStore.getAllLocks('invoice'));
 
   socket.on("start_edit_estimate", ({ estimateId, user }) => {
-    editingEstimates[estimateId] = user;
-    io.to("common_room").emit("locked_estimates", editingEstimates);
+    lockStore.lock('estimate', estimateId, user);
+    io.to("common_room").emit("locked_estimates", lockStore.getAllLocks('estimate'));
   });
 
   socket.on("stop_edit_estimate", ({ estimateId }) => {
-    delete editingEstimates[estimateId];
-    io.to("common_room").emit("locked_estimates", editingEstimates);
+    lockStore.unlock('estimate', estimateId);
+    io.to("common_room").emit("locked_estimates", lockStore.getAllLocks('estimate'));
   });
 
   socket.on("start_edit_invoice", ({ invoiceId, user }) => {
-    editingInvoices[invoiceId] = user;
-    io.to("common_room").emit("locked_invoices", editingInvoices);
+    lockStore.lock('invoice', invoiceId, user);
+    io.to("common_room").emit("locked_invoices", lockStore.getAllLocks('invoice'));
   });
 
   socket.on("stop_edit_invoice", ({ invoiceId }) => {
-    delete editingInvoices[invoiceId];
-    io.to("common_room").emit("locked_invoices", editingInvoices);
+    lockStore.unlock('invoice', invoiceId);
+    io.to("common_room").emit("locked_invoices", lockStore.getAllLocks('invoice'));
   });
 
   socket.on("disconnect", () => {

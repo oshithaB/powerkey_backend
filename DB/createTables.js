@@ -578,10 +578,37 @@ async function createTables(db) {
         console.warn('Migration for fixed employee warning:', error.message);
     }
 
-    // Insert default roles and users
+    // --- MIGRATION FOR UNIQUE INVOICE NUMBER PER COMPANY ---
+    try {
+        console.log('Checking and updating unique constraint for invoice_number...');
+        // Drop the existing unique index on invoice_number if it exists
+        try {
+            // We need to know the index name. Usually it's 'invoice_number'
+            await db.execute("ALTER TABLE invoices DROP INDEX invoice_number");
+            console.log("Dropped global unique index on invoice_number");
+        } catch (e) {
+            // Ignore if index doesn't exist
+            // console.log("Index drop ignored or failed (might not exist):", e.message);
+        }
+
+        // Add composite unique index
+        try {
+            // Check if composite index already exists
+            const [indexes] = await db.execute("SHOW INDEX FROM invoices WHERE Key_name = 'unique_invoice_per_company'");
+            if (indexes.length === 0) {
+                await db.execute("ALTER TABLE invoices ADD UNIQUE INDEX unique_invoice_per_company (company_id, invoice_number)");
+                console.log("Added composite unique index (company_id, invoice_number)");
+            }
+        } catch (e) {
+            console.log("Failed to add component index:", e.message);
+        }
+
+    } catch (error) {
+        console.error('Migration for unique invoice number failed:', error);
+    }
     try {
         // Check existing roles
-        const [existingRoles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff")');
+        const [existingRoles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff", "store_keeper")');
         console.log(`Found ${existingRoles.length} roles:`, existingRoles);
 
         const roleMap = existingRoles.reduce((map, role) => {
@@ -590,7 +617,7 @@ async function createTables(db) {
         }, {});
 
         // Define expected roles
-        const expectedRoles = ['admin', 'sale', 'staff'];
+        const expectedRoles = ['admin', 'sale', 'staff', 'store_keeper'];
         const missingRoles = expectedRoles.filter(role => !roleMap[role]);
 
         if (missingRoles.length > 0) {
