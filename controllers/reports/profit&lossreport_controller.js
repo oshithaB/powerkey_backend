@@ -96,15 +96,24 @@ class ReportController {
                 SELECT 0 as other_income
             `);
 
-            // Expenses - Operating expenses
+            // Expenses - Operating expenses from 'expenses' table
             const [expensesResult] = await db.execute(`
-                SELECT 0 as expenses
-            `);
+                SELECT 
+                    COALESCE(SUM(amount), 0) as expenses
+                FROM expenses
+                WHERE company_id = ?
+                AND payment_date BETWEEN ? AND ?
+            `, [company_id, ...dateParams]);
 
-            // Other Expenses - Non-operating expenses
+            // Other Expenses - From 'bills' table (excluding cancelled)
             const [otherExpensesResult] = await db.execute(`
-                SELECT 0 as other_expenses
-            `);
+                SELECT 
+                    COALESCE(SUM(total_amount), 0) as other_expenses
+                FROM bills
+                WHERE company_id = ?
+                AND status != 'cancelled'
+                AND bill_date BETWEEN ? AND ?
+            `, [company_id, ...dateParams]);
 
             // 4. ADDITIONAL METRICS
 

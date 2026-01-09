@@ -4,17 +4,33 @@ const db = require('../../DB/db');
 const getCommissionReport = async (req, res) => {
     const { start_date, end_date } = req.query;
     try {
-        let sumExpression = 'COALESCE(SUM(ii.quantity * p.commission), 0)';
+        let sumExpression = `COALESCE(SUM(
+            CASE 
+                WHEN p.commission_type = 'percentage' THEN ii.total_price * (p.commission / 100)
+                ELSE ii.quantity * p.commission
+            END
+        ), 0)`;
         let params = [];
-        
+
         if (start_date && end_date) {
             // Option 1: Use DATE() function to compare only the date part
-            sumExpression = 'COALESCE(SUM(CASE WHEN DATE(i.updated_at) >= ? AND DATE(i.updated_at) <= ? THEN ii.quantity * p.commission ELSE 0 END), 0)';
+            sumExpression = `COALESCE(SUM(CASE 
+                WHEN DATE(i.updated_at) >= ? AND DATE(i.updated_at) <= ? THEN 
+                    CASE 
+                        WHEN p.commission_type = 'percentage' THEN ii.total_price * (p.commission / 100)
+                        ELSE ii.quantity * p.commission
+                    END
+                ELSE 0 
+            END), 0)`;
             params = [start_date, end_date];
-            
-            // Option 2: If you want to include full day ranges, use this instead:
-            // sumExpression = 'COALESCE(SUM(CASE WHEN i.updated_at >= ? AND i.updated_at < DATE_ADD(?, INTERVAL 1 DAY) THEN ii.quantity * p.commission ELSE 0 END), 0)';
-            // params = [start_date, end_date];
+        } else {
+            // No dates provided, calculate total
+            sumExpression = `COALESCE(SUM(
+                CASE 
+                    WHEN p.commission_type = 'percentage' THEN ii.total_price * (p.commission / 100)
+                    ELSE ii.quantity * p.commission
+                END
+             ), 0)`;
         }
 
         const query = `
@@ -71,11 +87,23 @@ const getCommissionReportByEmployeeId = async (req, res) => {
     const { employeeId } = req.params;
     const { start_date, end_date } = req.query;
     try {
-        let sumExpression = 'COALESCE(SUM(ii.quantity * p.commission), 0)';
+        let sumExpression = `COALESCE(SUM(
+            CASE 
+                WHEN p.commission_type = 'percentage' THEN ii.total_price * (p.commission / 100)
+                ELSE ii.quantity * p.commission
+            END
+        ), 0)`;
         let paramsTotal = [employeeId];
         if (start_date && end_date) {
             // Use DATE() function to compare only the date part
-            sumExpression = 'COALESCE(SUM(CASE WHEN DATE(i.updated_at) >= ? AND DATE(i.updated_at) <= ? THEN ii.quantity * p.commission ELSE 0 END), 0)';
+            sumExpression = `COALESCE(SUM(CASE 
+                WHEN DATE(i.updated_at) >= ? AND DATE(i.updated_at) <= ? THEN 
+                    CASE 
+                        WHEN p.commission_type = 'percentage' THEN ii.total_price * (p.commission / 100)
+                        ELSE ii.quantity * p.commission
+                    END
+                ELSE 0 
+            END), 0)`;
             paramsTotal = [start_date, end_date, employeeId];
         }
 
@@ -126,8 +154,13 @@ const getCommissionReportByEmployeeId = async (req, res) => {
                 p.id AS product_id,
                 p.name AS product_name,
                 ii.quantity,
+                ii.quantity,
                 p.commission AS commission_per_unit,
-                (ii.quantity * p.commission) AS total_commission
+                p.commission_type,
+                (CASE 
+                    WHEN p.commission_type = 'percentage' THEN ii.total_price * (p.commission / 100)
+                    ELSE ii.quantity * p.commission
+                END) AS total_commission
             FROM
                 employees e
             INNER JOIN
