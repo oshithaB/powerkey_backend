@@ -98,6 +98,9 @@ const {
     getIncomeByCustomerSummary,
     getCustomerPhoneList,
     getSalesByCustomerIDDetail,
+    getInventoryValuationSummaryExcel,
+    getProductServiceListExcel,
+    getStockTakeWorksheetExcel
 } = salesAndCustomerController;
 
 // Importing expenses and suppliers controller functions
@@ -548,6 +551,27 @@ router.get(
     verifyToken,
     authorizedRoles(['admin', 'staff', 'accountant']),
     getSalesByCustomerIDDetail
+);
+
+router.get(
+    '/inventory-valuation-summary-excel/:company_id',
+    verifyToken,
+    authorizedRoles(['admin', 'staff', 'accountant']),
+    getInventoryValuationSummaryExcel
+);
+
+router.get(
+    '/product-service-list-excel/:company_id',
+    verifyToken,
+    authorizedRoles(['admin', 'staff', 'accountant']),
+    getProductServiceListExcel
+);
+
+router.get(
+    '/stock-take-worksheet-excel/:company_id',
+    verifyToken,
+    authorizedRoles(['admin', 'staff', 'accountant']),
+    getStockTakeWorksheetExcel
 );
 
 // Sales Tax routes ===========================================================================================================
