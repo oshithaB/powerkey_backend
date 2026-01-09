@@ -1,5 +1,6 @@
 const { get } = require('http');
 const db = require('../../../DB/db');
+const ExcelJS = require('exceljs');
 
 // Get customer contacts
 const getCustomerContacts = async (req, res) => {
@@ -43,7 +44,7 @@ const getCustomerContacts = async (req, res) => {
 const getSalesByEmployeeSummary = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT 
@@ -59,7 +60,7 @@ const getSalesByEmployeeSummary = async (req, res) => {
          AND i.total_amount IS NOT NULL
          AND i.status != 'proforma'
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -105,7 +106,7 @@ const getSalesByCustomerSummary = async (req, res) => {
          AND i.total_amount IS NOT NULL
          AND i.status != 'proforma'
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -134,7 +135,7 @@ const getSalesByCustomerSummary = async (req, res) => {
 const getSalesByCustomerDetail = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT 
@@ -151,7 +152,7 @@ const getSalesByCustomerDetail = async (req, res) => {
        WHERE c.is_active = TRUE
          AND c.company_id = ?
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -180,7 +181,7 @@ const getSalesByCustomerDetail = async (req, res) => {
 const getSalesByCustomerIDDetail = async (req, res) => {
   const { company_id, customer_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT
@@ -198,7 +199,7 @@ const getSalesByCustomerIDDetail = async (req, res) => {
           AND c.company_id = ?
           AND c.id = ?
     `;
-    
+
     const queryParams = [company_id, customer_id];
 
     if (start_date && end_date) {
@@ -307,7 +308,7 @@ const getProductServiceList = async (req, res) => {
 const getSalesByProductServiceSummary = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT
@@ -325,7 +326,7 @@ const getSalesByProductServiceSummary = async (req, res) => {
        JOIN invoices i ON ii.invoice_id = i.id
        WHERE p.company_id = ? AND i.status != 'proforma'
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -353,35 +354,35 @@ const getSalesByProductServiceSummary = async (req, res) => {
 // Get income by customer summary
 const getIncomeByCustomerSummary = async (req, res) => {
   try {
-      const { company_id } = req.params;
-      const { start_date, end_date } = req.query;
+    const { company_id } = req.params;
+    const { start_date, end_date } = req.query;
 
-      if (!company_id) {
-          return res.status(400).json({
-              success: false,
-              message: 'Company ID is required'
-          });
-      }
+    if (!company_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company ID is required'
+      });
+    }
 
-      // Build date filter condition
-      const today = new Date().toISOString().split('T')[0];
-      const startOfYear = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
-      let dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
-      let dateParams = [startOfYear, today];
+    // Build date filter condition
+    const today = new Date().toISOString().split('T')[0];
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+    let dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
+    let dateParams = [startOfYear, today];
 
-      if (start_date && end_date) {
-          dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
-          dateParams = [start_date, end_date];
-      } else if (start_date) {
-          dateCondition = 'AND i.invoice_date >= ?';
-          dateParams = [start_date];
-      } else if (end_date) {
-          dateCondition = 'AND i.invoice_date <= ?';
-          dateParams = [end_date];
-      }
+    if (start_date && end_date) {
+      dateCondition = 'AND i.invoice_date BETWEEN ? AND ?';
+      dateParams = [start_date, end_date];
+    } else if (start_date) {
+      dateCondition = 'AND i.invoice_date >= ?';
+      dateParams = [start_date];
+    } else if (end_date) {
+      dateCondition = 'AND i.invoice_date <= ?';
+      dateParams = [end_date];
+    }
 
-      // Get product income per customer
-      const [productIncomeResult] = await db.execute(`
+    // Get product income per customer
+    const [productIncomeResult] = await db.execute(`
           SELECT 
               c.id AS customer_id,
               c.name AS customer_name,
@@ -396,8 +397,8 @@ const getIncomeByCustomerSummary = async (req, res) => {
           GROUP BY c.id, c.name
       `, [company_id, ...dateParams]);
 
-      // Get shipping income per customer
-      const [shippingIncomeResult] = await db.execute(`
+    // Get shipping income per customer
+    const [shippingIncomeResult] = await db.execute(`
           SELECT 
               c.id AS customer_id,
               c.name AS customer_name,
@@ -411,8 +412,8 @@ const getIncomeByCustomerSummary = async (req, res) => {
           GROUP BY c.id, c.name
       `, [company_id, ...dateParams]);
 
-      // Get tax income per customer
-      const [taxIncomeResult] = await db.execute(`
+    // Get tax income per customer
+    const [taxIncomeResult] = await db.execute(`
           SELECT 
               c.id AS customer_id,
               c.name AS customer_name,
@@ -426,8 +427,8 @@ const getIncomeByCustomerSummary = async (req, res) => {
           GROUP BY c.id, c.name
       `, [company_id, ...dateParams]);
 
-      // Get cost of sales per customer (expenses)
-      const [costOfSalesResult] = await db.execute(`
+    // Get cost of sales per customer (expenses)
+    const [costOfSalesResult] = await db.execute(`
           SELECT 
               c.id AS customer_id,
               c.name AS customer_name,
@@ -443,8 +444,8 @@ const getIncomeByCustomerSummary = async (req, res) => {
           GROUP BY c.id, c.name
       `, [company_id, ...dateParams]);
 
-      // Get discount per customer
-      const [discountResult] = await db.execute(`
+    // Get discount per customer
+    const [discountResult] = await db.execute(`
           SELECT 
               c.id AS customer_id,
               c.name AS customer_name,
@@ -458,73 +459,73 @@ const getIncomeByCustomerSummary = async (req, res) => {
           GROUP BY c.id, c.name
       `, [company_id, ...dateParams]);
 
-      // Prepare data for all customers
-      const customerData = {};
-      
-      // Process all results and combine data by customer
-      const resultsMap = {
-          productIncome: productIncomeResult,
-          shippingIncome: shippingIncomeResult,
-          taxIncome: taxIncomeResult,
-          costOfSales: costOfSalesResult,
-          discount: discountResult
-      };
+    // Prepare data for all customers
+    const customerData = {};
 
-      for (const [key, result] of Object.entries(resultsMap)) {
-          result.forEach(row => {
-              if (!customerData[row.customer_id]) {
-                  customerData[row.customer_id] = {
-                      customer_name: row.customer_name,
-                      product_income: 0,
-                      shipping_income: 0,
-                      tax_income: 0,
-                      cost_of_sales: 0,
-                      discount: 0
-                  };
-              }
-              
-              if (key === 'productIncome') {
-                  customerData[row.customer_id].product_income = parseFloat(row.product_income || 0);
-              }
-              if (key === 'shippingIncome') {
-                  customerData[row.customer_id].shipping_income = parseFloat(row.shipping_income || 0);
-              }
-              if (key === 'taxIncome') {
-                  customerData[row.customer_id].tax_income = parseFloat(row.tax_income || 0);
-              }
-              if (key === 'costOfSales') {
-                  customerData[row.customer_id].cost_of_sales = parseFloat(row.cost_of_sales || 0);
-              }
-              if (key === 'discount') {
-                  customerData[row.customer_id].discount = parseFloat(row.discount || 0);
-              }
-          });
-      }
+    // Process all results and combine data by customer
+    const resultsMap = {
+      productIncome: productIncomeResult,
+      shippingIncome: shippingIncomeResult,
+      taxIncome: taxIncomeResult,
+      costOfSales: costOfSalesResult,
+      discount: discountResult
+    };
 
-      // Calculate final income and expense values
-      const summaryData = Object.values(customerData).map(customer => {
-          const total_income = customer.product_income + customer.shipping_income + customer.tax_income - customer.discount;
-          const total_expense = customer.cost_of_sales;
-          
-          return {
-              customer_name: customer.customer_name,
-              income: total_income,
-              expense: total_expense,
-              net_profit: total_income - total_expense
+    for (const [key, result] of Object.entries(resultsMap)) {
+      result.forEach(row => {
+        if (!customerData[row.customer_id]) {
+          customerData[row.customer_id] = {
+            customer_name: row.customer_name,
+            product_income: 0,
+            shipping_income: 0,
+            tax_income: 0,
+            cost_of_sales: 0,
+            discount: 0
           };
-      });
+        }
 
-      res.status(200).json({
-          status: 'success',
-          data: summaryData
+        if (key === 'productIncome') {
+          customerData[row.customer_id].product_income = parseFloat(row.product_income || 0);
+        }
+        if (key === 'shippingIncome') {
+          customerData[row.customer_id].shipping_income = parseFloat(row.shipping_income || 0);
+        }
+        if (key === 'taxIncome') {
+          customerData[row.customer_id].tax_income = parseFloat(row.tax_income || 0);
+        }
+        if (key === 'costOfSales') {
+          customerData[row.customer_id].cost_of_sales = parseFloat(row.cost_of_sales || 0);
+        }
+        if (key === 'discount') {
+          customerData[row.customer_id].discount = parseFloat(row.discount || 0);
+        }
       });
+    }
+
+    // Calculate final income and expense values
+    const summaryData = Object.values(customerData).map(customer => {
+      const total_income = customer.product_income + customer.shipping_income + customer.tax_income - customer.discount;
+      const total_expense = customer.cost_of_sales;
+
+      return {
+        customer_name: customer.customer_name,
+        income: total_income,
+        expense: total_expense,
+        net_profit: total_income - total_expense
+      };
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: summaryData
+    });
 
   } catch (error) {
-      console.error('Error fetching income by customer summary:', error);
-      res.status(500).json({
-          status: 'error',
-          message: 'Internal server error'
-      });
+    console.error('Error fetching income by customer summary:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
+    });
   }
 };
 
@@ -532,7 +533,7 @@ const getIncomeByCustomerSummary = async (req, res) => {
 const getSalesByProductServiceDetail = async (req, res) => {
   const { company_id, product_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT
@@ -556,7 +557,7 @@ const getSalesByProductServiceDetail = async (req, res) => {
        JOIN customer c ON i.customer_id = c.id
        WHERE p.company_id = ? AND p.id = ?
     `;
-    
+
     const queryParams = [company_id, product_id];
 
     if (start_date && end_date) {
@@ -612,7 +613,7 @@ const getCustomerPhoneList = async (req, res) => {
 const getDepositDetail = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT 
@@ -631,7 +632,7 @@ const getDepositDetail = async (req, res) => {
        JOIN invoices i ON p.invoice_id = i.id
        WHERE p.company_id = ?
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -660,7 +661,7 @@ const getDepositDetail = async (req, res) => {
 const getEstimatesByCustomer = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT 
@@ -674,7 +675,7 @@ const getEstimatesByCustomer = async (req, res) => {
        JOIN estimates e ON c.id = e.customer_id
        WHERE c.company_id = ?
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -712,8 +713,7 @@ const getInventoryValuationSummary = async (req, res) => {
           (p.quantity_on_hand * p.cost_price) AS asset_value
           FROM products p
        WHERE p.is_active = TRUE
-         AND p.company_id = ?
-       GROUP BY p.id, p.name, p.sku, p.quantity_on_hand, p.unit_price`,
+         AND p.company_id = ?`,
       [company_id]
     );
 
@@ -768,7 +768,7 @@ const getInventoryValuationDetail = async (req, res) => {
 const getPaymentMethodList = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT DISTINCT
@@ -778,7 +778,7 @@ const getPaymentMethodList = async (req, res) => {
        JOIN payments p ON pm.name = p.payment_method
        WHERE p.company_id = ?
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -884,7 +884,7 @@ const updateProductManualCount = async (req, res) => {
 const getTimeActivitiesByCustomerDetail = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT 
@@ -901,7 +901,7 @@ const getTimeActivitiesByCustomerDetail = async (req, res) => {
        WHERE ii.description LIKE '%time activity%'
          AND c.company_id = ?
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -930,7 +930,7 @@ const getTimeActivitiesByCustomerDetail = async (req, res) => {
 const getTransactionListByCustomer = async (req, res) => {
   const { company_id } = req.params;
   const { start_date, end_date } = req.query;
-  
+
   try {
     let query = `
       SELECT 
@@ -949,7 +949,7 @@ const getTransactionListByCustomer = async (req, res) => {
        LEFT JOIN payments p ON i.id = p.invoice_id
        WHERE c.company_id = ? AND c.is_active = TRUE
     `;
-    
+
     const queryParams = [company_id];
 
     if (start_date && end_date) {
@@ -974,6 +974,130 @@ const getTransactionListByCustomer = async (req, res) => {
   }
 };
 
+// Excel Download Handlers
+const getInventoryValuationSummaryExcel = async (req, res) => {
+  const { company_id } = req.params;
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+              p.name AS product_name,
+              p.sku,
+              p.quantity_on_hand AS qty,
+              p.cost_price AS cost_price,
+              (p.quantity_on_hand * p.cost_price) AS asset_value
+           FROM products p
+           WHERE p.is_active = TRUE
+             AND p.company_id = ?`,
+      [company_id]
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Inventory Valuation');
+
+    worksheet.columns = [
+      { header: 'Product Name', key: 'product_name', width: 30 },
+      { header: 'SKU', key: 'sku', width: 15 },
+      { header: 'Qty', key: 'qty', width: 10 },
+      { header: 'Cost Price', key: 'cost_price', width: 15 },
+      { header: 'Asset Value', key: 'asset_value', width: 15 }
+    ];
+
+    worksheet.addRows(rows);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=inventory_valuation.xlsx');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error generating Excel:', error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+};
+
+const getProductServiceListExcel = async (req, res) => {
+  const { company_id } = req.params;
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+              p.name,
+              p.sku,
+              p.description,
+              p.unit_price,
+              p.cost_price,
+              p.quantity_on_hand,
+              pc.name AS category_name
+           FROM products p
+           LEFT JOIN product_categories pc ON p.category_id = pc.id
+           WHERE p.is_active = TRUE
+             AND p.company_id = ?`,
+      [company_id]
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Product List');
+
+    worksheet.columns = [
+      { header: 'Name', key: 'name', width: 30 },
+      { header: 'SKU', key: 'sku', width: 15 },
+      { header: 'Description', key: 'description', width: 40 },
+      { header: 'Sales Price', key: 'unit_price', width: 15 },
+      { header: 'Cost', key: 'cost_price', width: 15 },
+      { header: 'Qty on Hand', key: 'quantity_on_hand', width: 15 },
+      { header: 'Category', key: 'category_name', width: 20 }
+    ];
+
+    worksheet.addRows(rows);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=product_list.xlsx');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error generating Excel:', error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+};
+
+const getStockTakeWorksheetExcel = async (req, res) => {
+  const { company_id } = req.params;
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+              p.name,
+              p.sku,
+              p.quantity_on_hand
+           FROM products p
+           WHERE p.is_active = TRUE
+             AND p.company_id = ?
+           ORDER BY p.name`,
+      [company_id]
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Stock Take Worksheet');
+
+    worksheet.columns = [
+      { header: 'Product Name', key: 'name', width: 30 },
+      { header: 'SKU', key: 'sku', width: 15 },
+      { header: 'Qty on Hand', key: 'quantity_on_hand', width: 15 },
+      { header: 'Physical Count', key: 'physical_count', width: 15 } // Blank column for manual entry
+    ];
+
+    worksheet.addRows(rows);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=stock_take_worksheet.xlsx');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error generating Excel:', error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+};
+
 module.exports = {
   getCustomerContacts,
   getSalesByEmployeeSummary,
@@ -994,5 +1118,8 @@ module.exports = {
   updateProductManualCount,
   getTimeActivitiesByCustomerDetail,
   getTransactionListByCustomer,
-  getSalesByCustomerIDDetail
+  getSalesByCustomerIDDetail,
+  getInventoryValuationSummaryExcel,
+  getProductServiceListExcel,
+  getStockTakeWorksheetExcel
 };
