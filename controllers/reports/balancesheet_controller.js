@@ -96,9 +96,11 @@ const getBalanceSheetData = async (req, res) => {
 
         const accountsPayable = parseFloat(apResult[0].accounts_payable) || 0;
 
-        // Calculate Tax Liabilities
+        // Calculate Tax Liabilities (Reverse Calculation)
         let taxQuery = `
-            SELECT COALESCE(SUM(tax_amount), 0) as total_tax
+            SELECT 
+                COALESCE(SUM(total_amount), 0) as total_gross,
+                COALESCE(SUM(tax_amount), 0) as total_vat
             FROM invoices 
             WHERE company_id = ? 
             AND status != 'cancelled'
@@ -111,46 +113,55 @@ const getBalanceSheetData = async (req, res) => {
         }
 
         const [taxResult] = await db.execute(taxQuery, taxParams);
-        const totalTax = parseFloat(taxResult[0].total_tax) || 0;
-        const ssclPayable = totalTax;
-        const vatPayable = totalTax * 0.18;
+        const totalGrossRevenue = parseFloat(taxResult[0].total_gross) || 0;
+        const totalVAT = parseFloat(taxResult[0].total_vat) || 0;
+
+        const vatExclusiveAmount = totalGrossRevenue - totalVAT;
+        const totalSSCL = vatExclusiveAmount * (2.5 / 102.5);
+
+        const ssclPayable = totalSSCL;
+        const vatPayable = totalVAT;
         const totalCurrentLiabilities = accountsPayable + ssclPayable + vatPayable;
         const nonCurrentLiabilities = 0;
         const totalLiabilities = totalCurrentLiabilities + nonCurrentLiabilities;
 
-        // Calculate Equity - Revenue
-        let revenueQuery = `
-            SELECT COALESCE(SUM(total_amount), 0) as total_revenue
-            FROM invoices 
+        // Calculate Equity - Revenue (Net Revenue)
+        // Net Revenue = VAT Exclusive - SSCL
+        const totalRevenue = vatExclusiveAmount - totalSSCL;
+
+        // Calculate Expenses (Operating Expenses + Bills)
+        let expensesQuery = `
+            SELECT COALESCE(SUM(amount), 0) as total_expenses
+            FROM expenses 
             WHERE company_id = ? 
-            AND status != 'cancelled'
-        `;
-        let revenueParams = [companyId];
-
-        if (asOfDate && asOfDate.trim() !== '') {
-            revenueQuery += ' AND invoice_date <= ?';
-            revenueParams.push(asOfDate);
-        }
-
-        const [revenueResult] = await db.execute(revenueQuery, revenueParams);
-        const totalRevenue = parseFloat(revenueResult[0].total_revenue) || 0;
-
-        // Calculate Expenses
-        let expenseQuery = `
-            SELECT COALESCE(SUM(total_amount), 0) as total_expenses
-            FROM orders 
-            WHERE company_id = ? 
-            AND status = 'closed'
         `;
         let expenseParams = [companyId];
 
         if (asOfDate && asOfDate.trim() !== '') {
-            expenseQuery += ' AND order_date <= ?';
+            expensesQuery += ' AND payment_date <= ?';
             expenseParams.push(asOfDate);
         }
 
-        const [expenseResult] = await db.execute(expenseQuery, expenseParams);
-        const totalExpenses = parseFloat(expenseResult[0].total_expenses) || 0;
+        const [expensesResult] = await db.execute(expensesQuery, expenseParams);
+        const operatingExpenses = parseFloat(expensesResult[0].total_expenses) || 0;
+
+        let billsQuery = `
+            SELECT COALESCE(SUM(total_amount), 0) as total_bills
+            FROM bills 
+            WHERE company_id = ? 
+            AND status != 'cancelled'
+        `;
+        let billsParams = [companyId];
+
+        if (asOfDate && asOfDate.trim() !== '') {
+            billsQuery += ' AND bill_date <= ?';
+            billsParams.push(asOfDate);
+        }
+
+        const [billsResult] = await db.execute(billsQuery, billsParams);
+        const billExpenses = parseFloat(billsResult[0].total_bills) || 0;
+
+        const totalExpenses = operatingExpenses + billExpenses;
 
         const netIncome = totalRevenue - totalExpenses;
         const openingBalance = companyOpeningBalance;
@@ -308,9 +319,11 @@ const getFormattedBalanceSheet = async (req, res) => {
 
         const accountsPayable = parseFloat(apResult[0].accounts_payable) || 0;
 
-        // Calculate Tax Liabilities
+        // Calculate Tax Liabilities (Reverse Calculation)
         let taxQuery = `
-            SELECT COALESCE(SUM(tax_amount), 0) as total_tax
+            SELECT 
+                COALESCE(SUM(total_amount), 0) as total_gross,
+                COALESCE(SUM(tax_amount), 0) as total_vat
             FROM invoices 
             WHERE company_id = ? 
             AND status != 'cancelled'
@@ -323,29 +336,21 @@ const getFormattedBalanceSheet = async (req, res) => {
         }
 
         const [taxResult] = await db.execute(taxQuery, taxParams);
-        const totalTax = parseFloat(taxResult[0].total_tax) || 0;
-        const ssclPayable = totalTax;
-        const vatPayable = totalTax * 0.18;
+        const totalGrossRevenue = parseFloat(taxResult[0].total_gross) || 0;
+        const totalVAT = parseFloat(taxResult[0].total_vat) || 0;
+
+        const vatExclusiveAmount = totalGrossRevenue - totalVAT;
+        const totalSSCL = vatExclusiveAmount * (2.5 / 102.5);
+
+        const ssclPayable = totalSSCL;
+        const vatPayable = totalVAT;
         const totalCurrentLiabilities = accountsPayable + ssclPayable + vatPayable;
         const nonCurrentLiabilities = 0;
         const totalLiabilities = totalCurrentLiabilities + nonCurrentLiabilities;
 
-        // Calculate Equity - Revenue
-        let revenueQuery = `
-            SELECT COALESCE(SUM(total_amount), 0) as total_revenue
-            FROM invoices 
-            WHERE company_id = ? 
-            AND status != 'cancelled'
-        `;
-        let revenueParams = [companyId];
-
-        if (asOfDate && asOfDate.trim() !== '') {
-            revenueQuery += ' AND invoice_date <= ?';
-            revenueParams.push(asOfDate);
-        }
-
-        const [revenueResult] = await db.execute(revenueQuery, revenueParams);
-        const totalRevenue = parseFloat(revenueResult[0].total_revenue) || 0;
+        // Calculate Equity - Revenue (Net Revenue)
+        // Net Revenue = VAT Exclusive - SSCL
+        const totalRevenue = vatExclusiveAmount - totalSSCL;
 
         // Calculate Expenses (Operating Expenses + Bills)
         let expensesQuery = `
