@@ -6,16 +6,16 @@ const multer = require('multer');
 const path = require('path');
 
 const {
-    getInvoices,
-    createInvoice,
-    updateInvoice,
-    getInvoiceItems,
-    deleteInvoice,
-    getInvoiceById,
-    getSalesPageDate,
-    getInvoicesByCustomer,
-    recordPayment,
-    checkCustomerEligibility
+  getInvoices,
+  createInvoice,
+  updateInvoice,
+  getInvoiceItems,
+  deleteInvoice,
+  getInvoiceById,
+  getSalesPageDate,
+  getInvoicesByCustomer,
+  recordPayment,
+  checkCustomerEligibility
 } = require('../controllers/invoice_controller');
 
 // Configure multer for file uploads
@@ -44,74 +44,74 @@ const upload = multer({
 
 // Routes
 router.get(
-    '/getInvoice/:company_id',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    getInvoices
+  '/getInvoice/:company_id',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getInvoices
 );
 
 router.get(
-    '/getInvoiceById/:company_id/:invoiceId',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    getInvoiceById
+  '/getInvoiceById/:company_id/:invoiceId',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getInvoiceById
 )
 
 router.post(
-    '/createInvoice/:company_id',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    upload.single('attachment'),
-    createInvoice
+  '/createInvoice/:company_id',
+  verifyToken,
+  authorizedRoles(['admin', 'staff']), // Removed 'sale'
+  upload.single('attachment'),
+  createInvoice
 );
 
 router.put(
-    '/updateInvoice/:company_id/:invoiceId',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    upload.single('attachment'),
-    updateInvoice
+  '/updateInvoice/:company_id/:invoiceId',
+  verifyToken,
+  authorizedRoles(['admin', 'staff']), // Removed 'sale'
+  upload.single('attachment'),
+  updateInvoice
 );
 
 router.delete(
-    '/deleteInvoice/:company_id/:invoiceId',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    deleteInvoice
+  '/deleteInvoice/:company_id/:invoiceId',
+  verifyToken,
+  authorizedRoles(['admin', 'staff']), // Removed 'sale'
+  deleteInvoice
 )
 
 router.get(
-    '/getInvoiceItems/:company_id/:invoiceId',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    getInvoiceItems
+  '/getInvoiceItems/:company_id/:invoiceId',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getInvoiceItems
 )
 
 router.get(
-    '/getInvoicesByCustomer/:company_id/:customerId',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    getInvoicesByCustomer
+  '/getInvoicesByCustomer/:company_id/:customerId',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getInvoicesByCustomer
 );
 
 router.post(
-    '/recordInvoicePayment/:company_id/:customerId',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    recordPayment
+  '/recordInvoicePayment/:company_id/:customerId',
+  verifyToken,
+  authorizedRoles(['admin', 'staff']), // Removed 'sale'
+  recordPayment
 );
 
 router.post(
-    '/checkCustomerEligibility',
-    verifyToken,
-    checkCustomerEligibility
+  '/checkCustomerEligibility',
+  verifyToken,
+  checkCustomerEligibility
 );
 
 router.get(
-    '/getSalesPageData/:company_id',
-    verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
-    getSalesPageDate
+  '/getSalesPageData/:company_id',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getSalesPageDate
 );
 
 module.exports = router;

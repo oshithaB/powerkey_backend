@@ -59,15 +59,15 @@ router.get(
 router.post(
     '/convertEstimateToInvoice/:companyId/:estimateId',
     verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
+    authorizedRoles(['admin', 'staff']), // Removed 'sale'
     convertEstimateToInvoice
 );
 
 router.post(
     '/updateEstimateAfterInvoice/:companyId/:estimateId',
     verifyToken,
-    authorizedRoles(['admin', 'sale', 'staff']),
+    authorizedRoles(['admin', 'staff']), // Removed 'sale'
     updateEstimateAfterInvoice
-  );
+);
 
 module.exports = router;
