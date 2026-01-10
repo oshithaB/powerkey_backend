@@ -98,11 +98,11 @@ const createInvoice = asyncHandler(async (req, res) => {
     const yy = String(now.getFullYear()).slice(-2);
     // mm and dd are no longer needed for invoice number but useful if we want them for something else.
 
-    // CUSTOM PRIX LOGIC: Use invoice_number from req.body as the prefix
-    const customPrefix = invoice_number || invoice_prefix || 'INV';
+    // Use company prefix from DB (ignore req.body.invoice_number)
+    const prefix = invoice_prefix || 'INV';
 
-    // Format: CUSTOM_PREFIX-YY-INV-NUMBER
-    const newInvoiceNumber = `${customPrefix}-${yy}-INV-${nextNumber}`;
+    // Format: COMPANY_PREFIX-YY-INV-NUMBER
+    const newInvoiceNumber = `${prefix}-${yy}-INV-${nextNumber}`;
 
     console.log(`Generated New Invoice Number: ${newInvoiceNumber}`);
 
