@@ -600,11 +600,20 @@ async function createTables(db) {
                 console.log("Added composite unique index (company_id, invoice_number)");
             }
         } catch (e) {
-            console.log("Failed to add component index:", e.message);
+            console.warn("Error adding unique_invoice_per_company index:", e.message);
         }
-
     } catch (error) {
-        console.error('Migration for unique invoice number failed:', error);
+        console.warn('Migration for unique invoice number warning:', error.message);
+    }
+
+    // --- MIGRATION FOR OPTIONAL BILL PAYMENT METHOD ---
+    try {
+        console.log('Checking and updating bills table for optional payment method...');
+        // Modify column to allow NULL
+        await db.execute("ALTER TABLE bills MODIFY COLUMN payment_method_id INT NULL");
+        console.log('bills table updated: payment_method_id is now nullable.');
+    } catch (error) {
+        console.warn('Migration for optional bill payment method warning:', error.message);
     }
 
     // --- MIGRATION FOR CUSTOM INVOICE NUMBERING ---
