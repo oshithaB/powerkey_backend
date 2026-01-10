@@ -191,8 +191,9 @@ const createEstimate = async (req, res) => {
 
     // --- Transactional Estimate Number Generation ---
     // Select company row FOR UPDATE to lock it for sequence safety
+    // User wants shared prefix with Invoice, so select invoice_prefix
     const [companyData] = await connection.query(
-      `SELECT current_estimate_number, estimate_prefix FROM company WHERE company_id = ? FOR UPDATE`,
+      `SELECT current_estimate_number, invoice_prefix FROM company WHERE company_id = ? FOR UPDATE`,
       [company_id]
     );
 
@@ -201,7 +202,7 @@ const createEstimate = async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const { current_estimate_number } = companyData[0];
+    const { current_estimate_number, invoice_prefix } = companyData[0];
     const nextNumber = (current_estimate_number || 0) + 1;
     // Format sequence as 4 digits (e.g. 0001) as requested
     const nextNumberStr = String(nextNumber).padStart(4, '0');
@@ -210,11 +211,11 @@ const createEstimate = async (req, res) => {
     const now = new Date();
     const yy = String(now.getFullYear()).slice(-2);
 
-    // Use estimate_number from req.body as the Custom Prefix
-    const customPrefix = estimate_number || 'EST';
+    // Use company prefix (invoice_prefix)
+    const prefix = invoice_prefix || 'EST';
 
-    // Format: CUSTOM_PREFIX-YY-EST-SEQUENCE
-    const newEstimateNumber = `${customPrefix}-${yy}-EST-${nextNumberStr}`;
+    // Format: COMPANY_PREFIX-YY-EST-SEQUENCE
+    const newEstimateNumber = `${prefix}-${yy}-EST-${nextNumberStr}`;
 
     console.log(`Generated New Estimate Number: ${newEstimateNumber}`);
 
