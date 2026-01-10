@@ -234,6 +234,22 @@ const selectCompany = async (req, res) => {
     }
 };
 
+const getCompanyById = async (req, res) => {
+    try {
+        const { companyId } = req.params;
+        const [company] = await db.query('SELECT * FROM company WHERE company_id = ?', [companyId]);
+
+        if (company.length === 0) {
+            return res.status(404).json({ message: 'Company not found' });
+        }
+
+        return res.status(200).json(company[0]);
+    } catch (error) {
+        console.error('Error getting company by ID:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 const updateCompany = async (req, res) => {
     try {
         const { companyId } = req.params;
@@ -249,7 +265,8 @@ const updateCompany = async (req, res) => {
         const allowedFields = [
             'name', 'is_taxable', 'tax_number', 'company_logo',
             'address', 'contact_number', 'email_address',
-            'registration_number', 'terms_and_conditions', 'notes', 'opening_balance'
+            'registration_number', 'terms_and_conditions', 'notes', 'opening_balance',
+            'invoice_prefix', 'current_invoice_number'
         ];
 
         const fieldsToUpdate = {};
@@ -519,5 +536,6 @@ module.exports = {
     getDashboardData,
     updateCompany,
     deleteCompany,
-    getMoneyInDrawerByCompany
+    getMoneyInDrawerByCompany,
+    getCompanyById
 };

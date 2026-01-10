@@ -977,6 +977,7 @@ const getTransactionListByCustomer = async (req, res) => {
 // Excel Download Handlers
 const getInventoryValuationSummaryExcel = async (req, res) => {
   const { company_id } = req.params;
+  console.log(`[Excel Debug] Req received: InventoryValuation. Company: ${company_id}`);
   try {
     const [rows] = await db.query(
       `SELECT 
@@ -990,6 +991,8 @@ const getInventoryValuationSummaryExcel = async (req, res) => {
              AND p.company_id = ?`,
       [company_id]
     );
+
+    console.log(`[Excel Debug] DB Query success. Rows: ${rows.length}`);
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Inventory Valuation');
@@ -1009,8 +1012,9 @@ const getInventoryValuationSummaryExcel = async (req, res) => {
 
     await workbook.xlsx.write(res);
     res.end();
+    console.log('[Excel Debug] Response sent.');
   } catch (error) {
-    console.error('Error generating Excel:', error);
+    console.error('[Excel Debug] Error:', error);
     res.status(500).json({ status: 'error', message: 'Internal server error' });
   }
 };

@@ -606,6 +606,19 @@ async function createTables(db) {
     } catch (error) {
         console.error('Migration for unique invoice number failed:', error);
     }
+
+    // --- MIGRATION FOR CUSTOM INVOICE NUMBERING ---
+    try {
+        console.log('Checking and updating company table for invoice numbering...');
+        const [columns] = await db.execute("SHOW COLUMNS FROM company LIKE 'invoice_prefix'");
+        if (columns.length === 0) {
+            await db.execute("ALTER TABLE company ADD COLUMN invoice_prefix VARCHAR(10) DEFAULT 'INV'");
+            await db.execute("ALTER TABLE company ADD COLUMN current_invoice_number INT DEFAULT 0");
+            console.log('Company table updated with invoice numbering columns.');
+        }
+    } catch (error) {
+        console.error('Migration for invoice numbering failed:', error);
+    }
     try {
         // Check existing roles
         const [existingRoles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff", "store_keeper")');

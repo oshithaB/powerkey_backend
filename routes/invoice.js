@@ -15,7 +15,8 @@ const {
   getSalesPageDate,
   getInvoicesByCustomer,
   recordPayment,
-  checkCustomerEligibility
+  checkCustomerEligibility,
+  cancelInvoice
 } = require('../controllers/invoice_controller');
 
 // Configure multer for file uploads
@@ -112,6 +113,21 @@ router.get(
   verifyToken,
   authorizedRoles(['admin', 'sale', 'staff']),
   getSalesPageDate
+);
+
+router.post(
+  '/cancelInvoice/:company_id',
+  verifyToken,
+  authorizedRoles(['admin']),
+  cancelInvoice
+);
+
+// Frontend Compatibility Route
+router.post(
+  '/invoice/cancelInvoice/:company_id',
+  verifyToken,
+  authorizedRoles(['admin']),
+  cancelInvoice
 );
 
 module.exports = router;
