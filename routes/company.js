@@ -4,14 +4,15 @@ const verifyToken = require('../middleware/verifyToken');
 const authorizedRoles = require('../middleware/authorized-roles');
 const upload = require('../middleware/upload');
 
-const { 
-    createCompany, 
-    selectCompany, 
-    getCompanies, 
-    getDashboardData,
-    updateCompany,
-    deleteCompany,
-    getMoneyInDrawerByCompany,
+const {
+  createCompany,
+  selectCompany,
+  getCompanies,
+  getDashboardData,
+  updateCompany,
+  deleteCompany,
+  getMoneyInDrawerByCompany,
+  getCompanyById
 } = require('../controllers/company_controller');
 
 // Upload single image with field name 'logo'
@@ -47,6 +48,22 @@ router.put(
   authorizedRoles(['admin']),
   upload.single('logo'),
   updateCompany
+);
+
+// Frontend Compatibility Route: Update Company
+router.put(
+  '/company/update/:companyId',
+  verifyToken,
+  authorizedRoles(['admin']),
+  upload.single('logo'),
+  updateCompany
+);
+
+// Frontend Compatibility Route: Get Company By ID
+router.get(
+  '/company/:companyId',
+  verifyToken,
+  getCompanyById
 );
 
 router.delete(

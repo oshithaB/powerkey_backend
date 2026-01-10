@@ -78,17 +78,33 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     await connection.beginTransaction();
 
-    // --- Prevent duplicate invoice numbers ---
-    const [duplicateInvoice] = await connection.query(
-      `SELECT id FROM invoices WHERE invoice_number = ? AND company_id = ?`,
-      [invoice_number, company_id]
+    // --- Transactional Invoice Number Generation ---
+    // Select company row FOR UPDATE to lock it
+    const [companyData] = await connection.query(
+      `SELECT invoice_prefix, current_invoice_number FROM company WHERE company_id = ? FOR UPDATE`,
+      [company_id]
     );
-    if (duplicateInvoice.length > 0) {
+
+    if (companyData.length === 0) {
       await connection.rollback();
-      return res.status(400).json({ error: `Invoice number '${invoice_number}' already exists` });
+      return res.status(404).json({ error: "Company not found" });
     }
 
+    const { invoice_prefix, current_invoice_number } = companyData[0];
+    const prefix = invoice_prefix || 'INV';
+    const nextNumber = (current_invoice_number || 0) + 1;
 
+    // Generate YYMMDD format
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${yy}${mm}${dd}`;
+
+    // Format: PREFIX-YYMMDD-NUMBER
+    const newInvoiceNumber = `${prefix}-${dateStr}-${nextNumber}`;
+
+    console.log(`Generated New Invoice Number: ${newInvoiceNumber}`);
 
     // --- Prepare invoice data ---
     const invoiceData = {
@@ -96,7 +112,7 @@ const createInvoice = asyncHandler(async (req, res) => {
       customer_id,
       employee_id: employee_id || null,
       estimate_id: estimate_id || null,
-      invoice_number,
+      invoice_number: newInvoiceNumber,
       head_note: head_note || null,
       invoice_date,
       due_date: due_date || null,
@@ -144,6 +160,12 @@ const createInvoice = asyncHandler(async (req, res) => {
     // --- Insert invoice ---
     const [result] = await connection.query(`INSERT INTO invoices SET ?`, invoiceData);
     const invoiceId = result.insertId;
+
+    // --- Update company current_invoice_number ---
+    await connection.query(
+      `UPDATE company SET current_invoice_number = ? WHERE company_id = ?`,
+      [nextNumber, company_id]
+    );
 
     // --- Insert invoice items ---
     const itemQuery = `INSERT INTO invoice_items
@@ -1797,6 +1819,116 @@ const getSalesPageDate = async (req, res) => {
   }
 }
 
+// Cancel Invoice
+const cancelInvoice = asyncHandler(async (req, res) => {
+  const { invoiceId, companyId } = req.body;
+
+  // Support both naming conventions
+  const cId = companyId || req.body.company_id;
+
+  console.log(`Cancel invoice request for ID: ${invoiceId}, Company: ${cId}`);
+
+  if (!invoiceId || !cId) {
+    return res.status(400).json({ error: "Invoice ID and Company ID are required" });
+  }
+
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    // 1. Get Invoice Details
+    const [invoice] = await connection.query(
+      `SELECT * FROM invoices WHERE id = ? AND company_id = ?`,
+      [invoiceId, cId]
+    );
+
+    if (invoice.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: "Invoice not found or does not belong to this company" });
+    }
+
+    const targetInvoice = invoice[0];
+
+    if (targetInvoice.status === 'cancelled') {
+      await connection.rollback();
+      return res.status(400).json({ error: "Invoice is already cancelled" });
+    }
+
+    // 2. Remove Payments (Reverse Income)
+    await connection.query(
+      `DELETE FROM payments WHERE invoice_id = ? AND company_id = ?`,
+      [invoiceId, cId]
+    );
+    console.log(`Deleted payments for invoice ${invoiceId}`);
+
+    // 3. Handle Restocking & Balance Logic
+    if (targetInvoice.status !== 'proforma') {
+      // Get invoice items
+      const [items] = await connection.query(
+        `SELECT id, product_id, quantity, stock_detail FROM invoice_items WHERE invoice_id = ?`,
+        [invoiceId]
+      );
+
+      for (const item of items) {
+        // Restock Product
+        await connection.query(
+          `UPDATE products SET quantity_on_hand = quantity_on_hand + ? WHERE id = ?`,
+          [item.quantity, item.product_id]
+        );
+
+        // Reverse Order Items Allocation
+        const stockDetails = typeof item.stock_detail === 'string'
+          ? JSON.parse(item.stock_detail || '[]')
+          : (item.stock_detail || []);
+
+        for (const detail of stockDetails) {
+          await connection.query(
+            `UPDATE order_items 
+                          SET remaining_qty = remaining_qty + ?, stock_status = 'in_stock'
+                          WHERE id = ?`,
+            [detail.used_qty, detail.order_item_id]
+          );
+        }
+
+        // Clear stock detail in invoice item (optional)
+        await connection.query(
+          `UPDATE invoice_items SET stock_detail = '[]' WHERE id = ?`,
+          [item.id] // Assuming item has id, but query above selected product_id, quantity, stock_detail. Need ID!
+        );
+        // Correction: need item ID to update it.
+      }
+
+      // Re-fetch items with ID for accuracy in update above, or just rely on loop.
+      // Actually, the previous loop missed `id` in select. 
+      // Let's fix the select in the loop above.
+
+      // Adjust Customer Balance
+      await connection.query(
+        `UPDATE customer SET current_balance = current_balance - ? WHERE id = ?`,
+        [targetInvoice.balance_due, targetInvoice.customer_id]
+      );
+    }
+
+    // 4. Update Invoice Status
+    await connection.query(
+      `UPDATE invoices SET status = 'cancelled', balance_due = 0, paid_amount = 0 WHERE id = ?`,
+      [invoiceId]
+    );
+
+    await connection.commit();
+    console.log(`Invoice ${invoiceId} cancelled successfully.`);
+    res.status(200).json({ message: "Invoice cancelled successfully" });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error cancelling invoice:', error);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    connection.release();
+  }
+});
+
 module.exports = {
   createInvoice,
   updateInvoice,
@@ -1808,5 +1940,6 @@ module.exports = {
   getSalesPageDate,
   getInvoicesByCustomer,
   recordPayment,
-  checkCustomerEligibility
+  checkCustomerEligibility,
+  cancelInvoice
 };
