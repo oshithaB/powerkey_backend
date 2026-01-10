@@ -609,11 +609,52 @@ async function createTables(db) {
     // --- MIGRATION FOR OPTIONAL BILL PAYMENT METHOD ---
     try {
         console.log('Checking and updating bills table for optional payment method...');
+
+        // Dynamically find and drop the Foreign Key on payment_method_id
+        const [fks] = await db.execute(`
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_NAME = 'bills' 
+            AND COLUMN_NAME = 'payment_method_id' 
+            AND TABLE_SCHEMA = DATABASE() 
+            AND REFERENCED_TABLE_NAME IS NOT NULL
+        `);
+
+        for (const fk of fks) {
+            console.log(`Dropping FK constraint: ${fk.CONSTRAINT_NAME}`);
+            await db.execute(`ALTER TABLE bills DROP FOREIGN KEY ${fk.CONSTRAINT_NAME}`);
+        }
+
         // Modify column to allow NULL
         await db.execute("ALTER TABLE bills MODIFY COLUMN payment_method_id INT NULL");
         console.log('bills table updated: payment_method_id is now nullable.');
+
+        // Recreate the foreign key constraint (allowing NULL)
+        try {
+            // Check if index exists first to avoid duplicate errors if previously created
+            const [indexes] = await db.execute("SHOW INDEX FROM bills WHERE Key_name = 'bills_payment_method_fk'");
+            if (indexes.length === 0) {
+                await db.execute("ALTER TABLE bills ADD CONSTRAINT bills_payment_method_fk FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)");
+                console.log('Recreated foreign key constraint for payment_method_id');
+            }
+        } catch (e) {
+            console.log('Note on recreating FK:', e.message);
+        }
+
     } catch (error) {
         console.warn('Migration for optional bill payment method warning:', error.message);
+    }
+
+    // --- MIGRATION FOR FLEXIBLE BILL FIELDS ---
+    try {
+        console.log('Checking and updating bills table for flexible fields...');
+        // Make bill_date, due_date, and bill_number nullable
+        await db.execute("ALTER TABLE bills MODIFY COLUMN bill_date DATE NULL");
+        await db.execute("ALTER TABLE bills MODIFY COLUMN due_date DATE NULL");
+        await db.execute("ALTER TABLE bills MODIFY COLUMN bill_number VARCHAR(100) NULL");
+        console.log('bills table updated: bill_date, due_date, and bill_number are now nullable.');
+    } catch (error) {
+        console.warn('Migration for flexible bill fields warning:', error.message);
     }
 
     // --- MIGRATION FOR CUSTOM INVOICE NUMBERING ---

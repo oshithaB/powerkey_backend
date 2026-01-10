@@ -23,15 +23,9 @@ const createBill = async (req, res) => {
   await conn.beginTransaction();
 
   try {
-    // Validate required fields
-    if (!bill_number) {
-      throw new Error('Bill number is required');
-    }
-    if (!bill_date) {
-      throw new Error('Bill date is required');
-    }
-    if (!due_date) {
-      throw new Error('Due date is required');
+    // Validate required fields - Only vendor_id and items are strictly required
+    if (!vendor_id) {
+      throw new Error('Vendor is required');
     }
     if (!items || items.length === 0) {
       throw new Error('Items are required');
@@ -40,6 +34,15 @@ const createBill = async (req, res) => {
     // New Logic: If mark_as_paid is true, payment_method is required
     if (mark_as_paid && !payment_method) {
       throw new Error('Payment method is required when marking as paid');
+    }
+
+    // Auto-generate bill_number if not provided
+    let finalBillNumber = bill_number;
+    if (!finalBillNumber) {
+      const timestamp = Date.now();
+      const random = Math.floor(Math.random() * 1000);
+      finalBillNumber = `BILL-${timestamp}-${random}`;
+      console.log('Auto-generated bill number:', finalBillNumber);
     }
 
     // Check if order_id is provided and already has a bill
@@ -85,11 +88,11 @@ const createBill = async (req, res) => {
     // payment_method can now be null if not marking as paid
     const insertParams = [
       company_id,
-      bill_number,
+      finalBillNumber,  // Use auto-generated or provided bill number
       order_id || null,
       vendor_id || null,
       employee_id || null,
-      bill_date,
+      bill_date || null,  // Allow null if not provided
       due_date || null,
       payment_method || null,
       notes || null,
@@ -141,25 +144,10 @@ const createBill = async (req, res) => {
     // --- LOGIC FOR BILL PAYMENTS (EXPENSE CREATION) ---
     // Only if marked as paid
     if (mark_as_paid) {
+      // Use current date if bill_date is not provided for payment
+      const paymentDate = bill_date || new Date().toISOString().split('T')[0];
+
       // Create Payment Record (Expense)
-      const expenseParams = [
-        billId,
-        vendor_id,
-        company_id,
-        calculatedTotal, // Full amount
-        bill_date, // Using bill date as payment date for 'instant pay'
-        payment_method, // ID/Name
-        'Bill Payment', // Standard Note
-        // Optional: deposit_to could be passed if UI supports it, else default or null
-      ];
-
-      // Note: Assuming 'deposit_to' isn't critical right here or is handled elsewhere/defaults
-      // If `payment_method` is an ID (which it likely is based on schema `payment_method_id` in bills), 
-      // we need the name for `bill_payments.payment_method` column which is VARCHAR(50).
-      // Or we need to fetch it. For now, assuming payment_method is passed as expected. 
-      // !CRITICAL!: `bill_payments` table expects `payment_method` as VARCHAR, but frontend usually sends ID for `bills` table.
-      // Let's check `payment_methods` to get the name if it's an ID.
-
       let paymentMethodName = 'Unknown';
       if (payment_method) {
         const [pmRows] = await conn.query('SELECT name FROM payment_methods WHERE id = ?', [payment_method]);
@@ -169,7 +157,7 @@ const createBill = async (req, res) => {
       await conn.execute(
         `INSERT INTO bill_payments (bill_id, vendor_id, company_id, payment_amount, payment_date, payment_method, notes)
               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [billId, vendor_id, company_id, calculatedTotal, bill_date, paymentMethodName, 'Auto-paid on Bill Creation']
+        [billId, vendor_id, company_id, calculatedTotal, paymentDate, paymentMethodName, 'Auto-paid on Bill Creation']
       );
 
       // Update Vendor Balance (Reduce debt? No, Bill increases debt (Credit). Payment reduces it (Debit).)
@@ -218,6 +206,7 @@ const createBill = async (req, res) => {
 
     // 2. Create System Order for FIFO Tracking
     const stockOrderNo = `BILL-STK-${billId}-${Date.now()}`;
+    const orderDate = bill_date || new Date().toISOString().split('T')[0]; // Use current date if bill_date not provided
     const [stockOrderResult] = await conn.execute(
       `INSERT INTO orders (
             company_id, vendor_id, order_no, order_date, total_amount, status, created_at
@@ -226,7 +215,7 @@ const createBill = async (req, res) => {
         company_id,
         vendor_id || null, // Associate with vendor if available
         stockOrderNo,
-        bill_date,
+        orderDate,
         calculatedTotal,
         'closed' // Automatically closed as stock is received
       ]
@@ -249,7 +238,7 @@ const createBill = async (req, res) => {
             item.product_id,
             item.product_name || '',
             '', // sku not always available in bill item, strictly not needed for FIFO id
-            `Stock from Bill #${bill_number}`,
+            `Stock from Bill #${finalBillNumber}`,
             qty,
             rate,
             Number(item.total_price) || 0,
@@ -263,7 +252,7 @@ const createBill = async (req, res) => {
     }
 
     await conn.commit();
-    res.status(201).json({ message: "Bill created successfully", billId });
+    res.status(201).json({ message: "Bill created successfully", billId, billNumber: finalBillNumber });
   } catch (error) {
     await conn.rollback();
     console.error("Error creating bill:", error);
@@ -438,23 +427,26 @@ const getBillsByVendor = async (req, res) => {
 
       const currentDate = new Date();
       for (const bill of bills) {
-        const dueDate = new Date(bill.due_date);
+        // Only process overdue check if due_date exists
+        if (bill.due_date) {
+          const dueDate = new Date(bill.due_date);
 
-        // Only update status to overdue if NOT proforma
-        if (
-          bill.status !== 'proforma' &&
-          dueDate < currentDate &&
-          bill.status !== 'paid' &&
-          bill.status !== 'cancelled' &&
-          bill.balance_due > 0
-        ) {
-          await connection.query(
-            `UPDATE bills 
-            SET status = 'overdue', updated_at = ?
-            WHERE id = ? AND company_id = ?`,
-            [new Date(), bill.id, company_id]
-          );
-          bill.status = 'overdue';
+          // Only update status to overdue if NOT proforma
+          if (
+            bill.status !== 'proforma' &&
+            dueDate < currentDate &&
+            bill.status !== 'paid' &&
+            bill.status !== 'cancelled' &&
+            bill.balance_due > 0
+          ) {
+            await connection.query(
+              `UPDATE bills 
+              SET status = 'overdue', updated_at = ?
+              WHERE id = ? AND company_id = ?`,
+              [new Date(), bill.id, company_id]
+            );
+            bill.status = 'overdue';
+          }
         }
 
         const [items] = await connection.query(
@@ -550,14 +542,17 @@ const recordPayment = async (req, res) => {
           status = 'partially_paid';
         }
 
-        const dueDate = new Date(bill[0].due_date);
-        if (
-          status !== 'paid' &&
-          dueDate < currentDate &&
-          balanceDue > 0 &&
-          status !== 'cancelled'
-        ) {
-          status = 'overdue';
+        // Check overdue status only if due_date exists
+        if (bill[0].due_date) {
+          const dueDate = new Date(bill[0].due_date);
+          if (
+            status !== 'paid' &&
+            dueDate < currentDate &&
+            balanceDue > 0 &&
+            status !== 'cancelled'
+          ) {
+            status = 'overdue';
+          }
         }
       }
 
