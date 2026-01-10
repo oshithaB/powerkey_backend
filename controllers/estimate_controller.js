@@ -189,15 +189,49 @@ const createEstimate = async (req, res) => {
     connection = await db.getConnection();
     await connection.beginTransaction();
 
-    // Prevent duplicate estimate numbers
+    // --- Transactional Estimate Number Generation ---
+    // Select company row FOR UPDATE to lock it for sequence safety
+    const [companyData] = await connection.query(
+      `SELECT current_estimate_number, estimate_prefix FROM company WHERE company_id = ? FOR UPDATE`,
+      [company_id]
+    );
+
+    if (companyData.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: "Company not found" });
+    }
+
+    const { current_estimate_number } = companyData[0];
+    const nextNumber = (current_estimate_number || 0) + 1;
+    // Format sequence as 4 digits (e.g. 0001) as requested
+    const nextNumberStr = String(nextNumber).padStart(4, '0');
+
+    // Generate YY format
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+
+    // Use estimate_number from req.body as the Custom Prefix
+    const customPrefix = estimate_number || 'EST';
+
+    // Format: CUSTOM_PREFIX-YY-EST-SEQUENCE
+    const newEstimateNumber = `${customPrefix}-${yy}-EST-${nextNumberStr}`;
+
+    console.log(`Generated New Estimate Number: ${newEstimateNumber}`);
+
+    // Prevent duplicate estimate numbers (sanity check, though sequence should be unique)
     const [duplicateEstimate] = await connection.query(
       `SELECT id FROM estimates WHERE estimate_number = ? AND company_id = ?`,
-      [estimate_number, company_id]
+      [newEstimateNumber, company_id]
     );
     if (duplicateEstimate.length > 0) {
       await connection.rollback();
-      return res.status(400).json({ error: `Estimate number '${estimate_number}' already exists` });
+      return res.status(400).json({ error: `Estimate number '${newEstimateNumber}' already exists` });
     }
+
+    // Update estimate_number variable to be used in insertion
+    // Note: We need to use newEstimateNumber in the INSERT statement later.
+    // The variable 'estimate_number' was destructured from const, so we can't reassign it if strict.
+    // But we can use 'newEstimateNumber' in the values array.
 
     // Recalculate item values
     const updatedItems = items.map(item => {
@@ -231,7 +265,7 @@ const createEstimate = async (req, res) => {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const estimateValues = [
-      estimate_number,
+      newEstimateNumber, // Use the generated estimate number
       company_id,
       customer_id,
       employee_id || null,
@@ -261,6 +295,12 @@ const createEstimate = async (req, res) => {
       await connection.rollback();
       return res.status(400).json({ error: "Failed to create estimate" });
     }
+
+    // --- Update company current_estimate_number ---
+    await connection.query(
+      `UPDATE company SET current_estimate_number = ? WHERE company_id = ?`,
+      [nextNumber, company_id]
+    );
 
     // Insert estimate items
     const itemQuery = `INSERT INTO estimate_items
@@ -565,8 +605,57 @@ const convertEstimateToInvoice = async (req, res) => {
       return res.status(400).json({ error: "Estimate has already been converted to an invoice" });
     }
 
-    // Generate invoice number (you may want to implement your own logic for invoice number generation)
-    const invoiceNumber = `INV-${estimateData.estimate_number}-${Date.now()}`;
+    // --- Generate Invoice Number from Estimate Number ---
+    // Fetch company current invoice number FOR UPDATE
+    const [companyData] = await db.query(
+      `SELECT current_invoice_number FROM company WHERE company_id = ? FOR UPDATE`,
+      [companyId]
+    );
+
+    if (companyData.length === 0) {
+      await db.query('ROLLBACK');
+      return res.status(404).json({ error: "Company not found" });
+    }
+
+    const { current_invoice_number } = companyData[0];
+    const nextInvoiceNumber = (current_invoice_number || 0) + 1;
+
+    // Estimate Number Format: PREFIX-YY-EST-SEQ
+    // Extract prefix (part before -YY-)
+    // Strategy: Split by '-' and assume structure, OR just take from start until a year pattern matches?
+    // User format: PWKAXX-24-EST-0001
+    // Simplest robust way given strict pattern: 
+    // parts = estimateData.estimate_number.split('-'); 
+    // If parts.length >= 4, prefix is parts[0] (or 0 to length-3 joined).
+    // Let's assume standard format we generated: PREFIX-YY-EST-SEQ
+
+    let prefix = 'INV'; // Fallback
+    const estNum = estimateData.estimate_number;
+    if (estNum && estNum.includes('-EST-')) {
+      // Split by '-EST-' to isolate left side (PREFIX-YY)
+      const leftSide = estNum.split('-EST-')[0]; // "PWKAXX-24"
+      // Now split by last dash to separate PREFIX and YY
+      const lastDashIndex = leftSide.lastIndexOf('-');
+      if (lastDashIndex !== -1) {
+        prefix = leftSide.substring(0, lastDashIndex); // "PWKAXX"
+      } else {
+        prefix = leftSide; // fallback if no YY dash?
+      }
+    } else {
+      // Just use user provided estimate number as prefix if pattern doesn't match?
+      // Or default 'INV'? 
+      // User said "for the estimate use the same letter... when converted...". 
+      // Assuming conversion implies keeping that letter code.
+      prefix = estNum ? estNum.split('-')[0] : 'INV';
+    }
+
+    // Generate YY format
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+
+    // New Invoice Number: PREFIX-YY-INV-SEQ
+    const invoiceNumber = `${prefix}-${yy}-INV-${nextInvoiceNumber}`;
+    console.log(`Converted Estimate to Invoice Number: ${invoiceNumber}`);
 
     // Create invoice
     const invoiceQuery = `
@@ -611,6 +700,12 @@ const convertEstimateToInvoice = async (req, res) => {
       await db.query('ROLLBACK');
       return res.status(400).json({ error: "Failed to create invoice" });
     }
+
+    // --- Update company current_invoice_number ---
+    await db.query(
+      `UPDATE company SET current_invoice_number = ? WHERE company_id = ?`,
+      [nextInvoiceNumber, companyId]
+    );
 
     // Fetch estimate items
     const [estimateItems] = await db.query(

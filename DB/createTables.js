@@ -652,9 +652,25 @@ async function createTables(db) {
         await db.execute("ALTER TABLE bills MODIFY COLUMN bill_date DATE NULL");
         await db.execute("ALTER TABLE bills MODIFY COLUMN due_date DATE NULL");
         await db.execute("ALTER TABLE bills MODIFY COLUMN bill_number VARCHAR(100) NULL");
+        // Also ensure bill_number UNIQUE constraint allows NULLs or is handled. 
+        // MySQL UNIQUE allows multiple NULLs.
         console.log('bills table updated: bill_date, due_date, and bill_number are now nullable.');
     } catch (error) {
         console.warn('Migration for flexible bill fields warning:', error.message);
+    }
+
+    // --- MIGRATION FOR ESTIMATE SEQUENCE ---
+    try {
+        console.log('Checking and updating company table for estimate sequence...');
+        const [columns] = await db.execute("SHOW COLUMNS FROM company LIKE 'current_estimate_number'");
+        if (columns.length === 0) {
+            await db.execute("ALTER TABLE company ADD COLUMN current_estimate_number INT DEFAULT 0");
+            console.log('company table updated: current_estimate_number column added.');
+        } else {
+            console.log('company table already has current_estimate_number.');
+        }
+    } catch (error) {
+        console.warn('Migration for estimate sequence warning:', error.message);
     }
 
     // --- MIGRATION FOR CUSTOM INVOICE NUMBERING ---

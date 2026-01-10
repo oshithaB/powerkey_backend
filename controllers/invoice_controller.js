@@ -91,18 +91,18 @@ const createInvoice = asyncHandler(async (req, res) => {
     }
 
     const { invoice_prefix, current_invoice_number } = companyData[0];
-    const prefix = invoice_prefix || 'INV';
     const nextNumber = (current_invoice_number || 0) + 1;
 
-    // Generate YYMMDD format
+    // Generate YY format
     const now = new Date();
     const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const dateStr = `${yy}${mm}${dd}`;
+    // mm and dd are no longer needed for invoice number but useful if we want them for something else.
 
-    // Format: PREFIX-YYMMDD-NUMBER
-    const newInvoiceNumber = `${prefix}-${dateStr}-${nextNumber}`;
+    // CUSTOM PRIX LOGIC: Use invoice_number from req.body as the prefix
+    const customPrefix = invoice_number || invoice_prefix || 'INV';
+
+    // Format: CUSTOM_PREFIX-YY-INV-NUMBER
+    const newInvoiceNumber = `${customPrefix}-${yy}-INV-${nextNumber}`;
 
     console.log(`Generated New Invoice Number: ${newInvoiceNumber}`);
 
