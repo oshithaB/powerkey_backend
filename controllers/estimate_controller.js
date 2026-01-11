@@ -193,7 +193,7 @@ const createEstimate = async (req, res) => {
     // Select company row FOR UPDATE to lock it for sequence safety
     // User wants shared prefix with Invoice, so select invoice_prefix
     const [companyData] = await connection.query(
-      `SELECT current_estimate_number, invoice_prefix FROM company WHERE company_id = ? FOR UPDATE`,
+      `SELECT current_estimate_number, invoice_prefix, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
       [company_id]
     );
 
@@ -202,7 +202,7 @@ const createEstimate = async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const { current_estimate_number, invoice_prefix } = companyData[0];
+    const { current_estimate_number, invoice_prefix, invoice_separators } = companyData[0];
     const nextNumber = (current_estimate_number || 0) + 1;
     // Format sequence as 4 digits (e.g. 0001) as requested
     const nextNumberStr = String(nextNumber).padStart(4, '0');
@@ -214,8 +214,12 @@ const createEstimate = async (req, res) => {
     // Use company prefix (invoice_prefix)
     const prefix = invoice_prefix || 'EST';
 
-    // Format: COMPANY_PREFIX-YY-EST-SEQUENCE
-    const newEstimateNumber = `${prefix}-${yy}-EST-${nextNumberStr}`;
+    // Check separator setting
+    const useSeparator = (invoice_separators !== 0 && invoice_separators !== false);
+    const sep = useSeparator ? '-' : '';
+
+    // Format: COMPANY_PREFIX[-]YY[-]EST[-]SEQUENCE
+    const newEstimateNumber = `${prefix}${sep}${yy}${sep}EST${sep}${nextNumberStr}`;
 
     console.log(`Generated New Estimate Number: ${newEstimateNumber}`);
 
@@ -609,7 +613,7 @@ const convertEstimateToInvoice = async (req, res) => {
     // --- Generate Invoice Number from Estimate Number ---
     // Fetch company current invoice number FOR UPDATE
     const [companyData] = await db.query(
-      `SELECT current_invoice_number FROM company WHERE company_id = ? FOR UPDATE`,
+      `SELECT current_invoice_number, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
       [companyId]
     );
 
@@ -618,44 +622,40 @@ const convertEstimateToInvoice = async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const { current_invoice_number } = companyData[0];
+    const { current_invoice_number, invoice_separators } = companyData[0];
     const nextInvoiceNumber = (current_invoice_number || 0) + 1;
 
-    // Estimate Number Format: PREFIX-YY-EST-SEQ
-    // Extract prefix (part before -YY-)
-    // Strategy: Split by '-' and assume structure, OR just take from start until a year pattern matches?
-    // User format: PWKAXX-24-EST-0001
-    // Simplest robust way given strict pattern: 
-    // parts = estimateData.estimate_number.split('-'); 
-    // If parts.length >= 4, prefix is parts[0] (or 0 to length-3 joined).
-    // Let's assume standard format we generated: PREFIX-YY-EST-SEQ
-
-    let prefix = 'INV'; // Fallback
+    // Estimate Number Format: PREFIX[-]YY[-]EST[-]SEQ
+    let prefix = 'INV';
     const estNum = estimateData.estimate_number;
-    if (estNum && estNum.includes('-EST-')) {
-      // Split by '-EST-' to isolate left side (PREFIX-YY)
-      const leftSide = estNum.split('-EST-')[0]; // "PWKAXX-24"
-      // Now split by last dash to separate PREFIX and YY
-      const lastDashIndex = leftSide.lastIndexOf('-');
-      if (lastDashIndex !== -1) {
-        prefix = leftSide.substring(0, lastDashIndex); // "PWKAXX"
+
+    // Robust parsing using Regex to support both separators and no-separators
+    // Matches: (Prefix) optional-dash (2digits) optional-dash EST
+    // Regex: ^(.*?)[\-]?(\d{2})[\-]?EST
+    if (estNum) {
+      const match = estNum.match(/^(.*?)[\-]?(\d{2})[\-]?EST/);
+      if (match && match[1]) {
+        prefix = match[1];
       } else {
-        prefix = leftSide; // fallback if no YY dash?
+        // Fallback simple split if regex fails
+        prefix = estNum.split('-')[0];
       }
-    } else {
-      // Just use user provided estimate number as prefix if pattern doesn't match?
-      // Or default 'INV'? 
-      // User said "for the estimate use the same letter... when converted...". 
-      // Assuming conversion implies keeping that letter code.
-      prefix = estNum ? estNum.split('-')[0] : 'INV';
     }
+
+    // Clean up prefix if it ended with a dash that wasn't caught by regex separation
+    if (prefix.endsWith('-')) prefix = prefix.slice(0, -1);
+    if (!prefix) prefix = 'INV';
 
     // Generate YY format
     const now = new Date();
     const yy = String(now.getFullYear()).slice(-2);
 
-    // New Invoice Number: PREFIX-YY-INV-SEQ
-    const invoiceNumber = `${prefix}-${yy}-INV-${nextInvoiceNumber}`;
+    // Check separator setting
+    const useSeparator = (invoice_separators !== 0 && invoice_separators !== false);
+    const sep = useSeparator ? '-' : '';
+
+    // New Invoice Number: PREFIX[-]YY[-]INV[-]SEQ
+    const invoiceNumber = `${prefix}${sep}${yy}${sep}INV${sep}${nextInvoiceNumber}`;
     console.log(`Converted Estimate to Invoice Number: ${invoiceNumber}`);
 
     // Create invoice

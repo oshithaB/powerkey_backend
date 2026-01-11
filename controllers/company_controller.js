@@ -266,7 +266,8 @@ const updateCompany = async (req, res) => {
             'name', 'is_taxable', 'tax_number', 'company_logo',
             'address', 'contact_number', 'email_address',
             'registration_number', 'terms_and_conditions', 'notes', 'opening_balance',
-            'invoice_prefix', 'current_invoice_number'
+            'invoice_prefix', 'current_invoice_number', 'current_estimate_number',
+            'invoice_separators'
         ];
 
         const fieldsToUpdate = {};
@@ -529,6 +530,51 @@ const getMoneyInDrawerByCompany = async (req, res) => {
     }
 };
 
+const getNextNumbers = async (req, res) => {
+    try {
+        const { companyId } = req.params;
+        const [company] = await db.query(
+            'SELECT invoice_prefix, current_invoice_number, current_estimate_number, invoice_separators FROM company WHERE company_id = ?',
+            [companyId]
+        );
+
+        if (company.length === 0) {
+            return res.status(404).json({ success: false, message: 'Company not found' });
+        }
+
+        const { invoice_prefix, current_invoice_number, current_estimate_number, invoice_separators } = company[0];
+
+        // Format Logic
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const prefix = invoice_prefix || 'INV';
+        const useSeparator = (invoice_separators !== 0 && invoice_separators !== false);
+        const sep = useSeparator ? '-' : '';
+
+        // Next Invoice
+        const nextInvSeq = (current_invoice_number || 0) + 1;
+        const nextInvoiceNumber = `${prefix}${sep}${yy}${sep}INV${sep}${nextInvSeq}`;
+
+        // Next Estimate
+        const nextEstSeq = (current_estimate_number || 0) + 1;
+        // User requested sequence padded to 4 digits for estimate (0001)
+        const nextEstSeqStr = String(nextEstSeq).padStart(4, '0');
+        const nextEstimateNumber = `${prefix}${sep}${yy}${sep}EST${sep}${nextEstSeqStr}`;
+
+        return res.status(200).json({
+            success: true,
+            invoice_prefix: prefix,
+            next_invoice_number: nextInvoiceNumber,
+            next_estimate_number: nextEstimateNumber,
+            invoice_separators: useSeparator
+        });
+
+    } catch (error) {
+        console.error('Error getting next numbers:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+};
+
 module.exports = {
     createCompany,
     selectCompany,
@@ -537,5 +583,6 @@ module.exports = {
     updateCompany,
     deleteCompany,
     getMoneyInDrawerByCompany,
-    getCompanyById
+    getCompanyById,
+    getNextNumbers
 };

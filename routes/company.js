@@ -12,7 +12,8 @@ const {
   updateCompany,
   deleteCompany,
   getMoneyInDrawerByCompany,
-  getCompanyById
+  getCompanyById,
+  getNextNumbers
 } = require('../controllers/company_controller');
 
 // Upload single image with field name 'logo'
@@ -64,6 +65,13 @@ router.get(
   '/company/:companyId',
   verifyToken,
   getCompanyById
+);
+
+// Frontend Compatibility Route: Get Next Numbers
+router.get(
+  '/company/next-numbers/:companyId',
+  verifyToken,
+  getNextNumbers
 );
 
 router.delete(

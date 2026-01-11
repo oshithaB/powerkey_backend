@@ -673,6 +673,21 @@ async function createTables(db) {
         console.warn('Migration for estimate sequence warning:', error.message);
     }
 
+    // --- MIGRATION FOR INVOICE SEPARATORS ---
+    try {
+        console.log('Checking and updating company table for invoice separators...');
+        const [columns] = await db.execute("SHOW COLUMNS FROM company LIKE 'invoice_separators'");
+        if (columns.length === 0) {
+            // Default to 1 (true) for backward compatibility with dashes
+            await db.execute("ALTER TABLE company ADD COLUMN invoice_separators TINYINT(1) DEFAULT 1");
+            console.log('company table updated: invoice_separators column added.');
+        } else {
+            console.log('company table already has invoice_separators.');
+        }
+    } catch (error) {
+        console.warn('Migration for invoice separators warning:', error.message);
+    }
+
     // --- MIGRATION FOR CUSTOM INVOICE NUMBERING ---
     try {
         console.log('Checking and updating company table for invoice numbering...');

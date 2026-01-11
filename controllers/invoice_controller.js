@@ -81,7 +81,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     // --- Transactional Invoice Number Generation ---
     // Select company row FOR UPDATE to lock it
     const [companyData] = await connection.query(
-      `SELECT invoice_prefix, current_invoice_number FROM company WHERE company_id = ? FOR UPDATE`,
+      `SELECT invoice_prefix, current_invoice_number, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
       [company_id]
     );
 
@@ -90,7 +90,7 @@ const createInvoice = asyncHandler(async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const { invoice_prefix, current_invoice_number } = companyData[0];
+    const { invoice_prefix, current_invoice_number, invoice_separators } = companyData[0];
     const nextNumber = (current_invoice_number || 0) + 1;
 
     // Generate YY format
@@ -101,8 +101,12 @@ const createInvoice = asyncHandler(async (req, res) => {
     // Use company prefix from DB (ignore req.body.invoice_number)
     const prefix = invoice_prefix || 'INV';
 
-    // Format: COMPANY_PREFIX-YY-INV-NUMBER
-    const newInvoiceNumber = `${prefix}-${yy}-INV-${nextNumber}`;
+    // Check separator setting (default to true/1 if undefined)
+    const useSeparator = (invoice_separators !== 0 && invoice_separators !== false);
+    const sep = useSeparator ? '-' : '';
+
+    // Format: PREFIX[-][YY][-]INV[-]NUMBER
+    const newInvoiceNumber = `${prefix}${sep}${yy}${sep}INV${sep}${nextNumber}`;
 
     console.log(`Generated New Invoice Number: ${newInvoiceNumber}`);
 
