@@ -1,0 +1,391 @@
+--- DEBUGGING COMMISSION DATA ---
+
+1. Employees: [
+  {
+    "id": 1,
+    "name": "Sujith Fonseka",
+    "is_active": 1
+  },
+  {
+    "id": 2,
+    "name": "Lahiru Perera",
+    "is_active": 1
+  },
+  {
+    "id": 3,
+    "name": "Nimal Fonseka",
+    "is_active": 1
+  },
+  {
+    "id": 4,
+    "name": "saman",
+    "is_active": 1
+  },
+  {
+    "id": 5,
+    "name": "saman",
+    "is_active": 1
+  },
+  {
+    "id": 6,
+    "name": "sample",
+    "is_active": 1
+  },
+  {
+    "id": 7,
+    "name": "ab@m.com",
+    "is_active": 1
+  }
+]
+2. Recent Invoices: [
+  {
+    "id": 26,
+    "invoice_number": "INV-1767601375745",
+    "employee_id": null,
+    "status": "opened",
+    "total_amount": "10000.03",
+    "updated_at": "2026-01-05 08:23:30"
+  },
+  {
+    "id": 25,
+    "invoice_number": "INV-1767582618859",
+    "employee_id": null,
+    "status": "opened",
+    "total_amount": "2000.01",
+    "updated_at": "2026-01-05 03:10:47"
+  },
+  {
+    "id": 24,
+    "invoice_number": "INV-1767203254125",
+    "employee_id": null,
+    "status": "opened",
+    "total_amount": "22000.06",
+    "updated_at": "2025-12-31 17:50:03"
+  },
+  {
+    "id": 21,
+    "invoice_number": "INV-1767032665903",
+    "employee_id": null,
+    "status": "paid",
+    "total_amount": "2000.01",
+    "updated_at": "2025-12-29 18:25:25"
+  },
+  {
+    "id": 20,
+    "invoice_number": "INV-1766420551013",
+    "employee_id": null,
+    "status": "paid",
+    "total_amount": "2000.01",
+    "updated_at": "2025-12-24 18:20:58"
+  },
+  {
+    "id": 10,
+    "invoice_number": "INV-1759385548959",
+    "employee_id": 3,
+    "status": "overdue",
+    "total_amount": "5118.00",
+    "updated_at": "2026-01-08 23:46:51"
+  },
+  {
+    "id": 9,
+    "invoice_number": "INV-1759385222407",
+    "employee_id": null,
+    "status": "paid",
+    "total_amount": "5100.00",
+    "updated_at": "2025-12-24 18:20:58"
+  },
+  {
+    "id": 8,
+    "invoice_number": "INV-1759381119518",
+    "employee_id": null,
+    "status": "overdue",
+    "total_amount": "7200.01",
+    "updated_at": "2026-01-08 23:46:51"
+  },
+  {
+    "id": 7,
+    "invoice_number": "INV-1759381069443",
+    "employee_id": null,
+    "status": "overdue",
+    "total_amount": "5000.00",
+    "updated_at": "2026-01-08 23:46:51"
+  },
+  {
+    "id": 1,
+    "invoice_number": "INV-1759380057223",
+    "employee_id": null,
+    "status": "paid",
+    "total_amount": "5000.00",
+    "updated_at": "2025-12-24 18:20:58"
+  }
+]
+3. Invoice Items & Commissions: [
+  {
+    "invoice_id": 1,
+    "product_id": 6,
+    "quantity": "1.00",
+    "total_price": "5000.00",
+    "product_name": "Prod6",
+    "commission": "100.00",
+    "commission_type": "fixed"
+  },
+  {
+    "invoice_id": 7,
+    "product_id": 6,
+    "quantity": "1.00",
+    "total_price": "5000.00",
+    "product_name": "Prod6",
+    "commission": "100.00",
+    "commission_type": "fixed"
+  },
+  {
+    "invoice_id": 8,
+    "product_id": 6,
+    "quantity": "1.00",
+    "total_price": "5000.00",
+    "product_name": "Prod6",
+    "commission": "100.00",
+    "commission_type": "fixed"
+  },
+  {
+    "invoice_id": 8,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 9,
+    "product_id": 6,
+    "quantity": "1.00",
+    "total_price": "5000.00",
+    "product_name": "Prod6",
+    "commission": "100.00",
+    "commission_type": "fixed"
+  },
+  {
+    "invoice_id": 10,
+    "product_id": 6,
+    "quantity": "1.00",
+    "total_price": "5000.00",
+    "product_name": "Prod6",
+    "commission": "100.00",
+    "commission_type": "fixed"
+  },
+  {
+    "invoice_id": 20,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 21,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 24,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 25,
+    "product_id": 5,
+    "quantity": "1.00",
+    "total_price": "2000.00",
+    "product_name": "Prod5",
+    "commission": "200.00",
+    "commission_type": "percentage"
+  },
+  {
+    "invoice_id": 26,
+    "product_id": 7,
+    "quantity": "10.00",
+    "total_price": "10000.00",
+    "product_name": "new sample",
+    "commission": "100.00",
+    "commission_type": "fixed"
+  }
+]
+4. Report Simulation: [
+  {
+    "employee_name": "Nimal Fonseka",
+    "invoice_number": "INV-1759385548959",
+    "status": "overdue",
+    "product_name": "Prod6",
+    "commission": "100.00",
+    "commission_type": "fixed",
+    "quantity": "1.00",
+    "total_price": "5000.00",
+    "calc_comm": "100.00000000"
+  },
+  {
+    "employee_name": "Sujith Fonseka",
+    "invoice_number": null,
+    "status": null,
+    "product_name": null,
+    "commission": null,
+    "commission_type": null,
+    "quantity": null,
+    "total_price": null,
+    "calc_comm": null
+  },
+  {
+    "employee_name": "Lahiru Perera",
+    "invoice_number": null,
+    "status": null,
+    "product_name": null,
+    "commission": null,
+    "commission_type": null,
+    "quantity": null,
+    "total_price": null,
+    "calc_comm": null
+  },
+  {
+    "employee_name": "saman",
+    "invoice_number": null,
+    "status": null,
+    "product_name": null,
+    "commission": null,
+    "commission_type": null,
+    "quantity": null,
+    "total_price": null,
+    "calc_comm": null
+  },
+  {
+    "employee_name": "saman",
+    "invoice_number": null,
+    "status": null,
+    "product_name": null,
+    "commission": null,
+    "commission_type": null,
+    "quantity": null,
+    "total_price": null,
+    "calc_comm": null
+  },
+  {
+    "employee_name": "sample",
+    "invoice_number": null,
+    "status": null,
+    "product_name": null,
+    "commission": null,
+    "commission_type": null,
+    "quantity": null,
+    "total_price": null,
+    "calc_comm": null
+  },
+  {
+    "employee_name": "ab@m.com",
+    "invoice_number": null,
+    "status": null,
+    "product_name": null,
+    "commission": null,
+    "commission_type": null,
+    "quantity": null,
+    "total_price": null,
+    "calc_comm": null
+  }
+]
