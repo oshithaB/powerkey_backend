@@ -610,10 +610,10 @@ const convertEstimateToInvoice = async (req, res) => {
       return res.status(400).json({ error: "Estimate has already been converted to an invoice" });
     }
 
-    // --- Generate Invoice Number from Estimate Number ---
+    // --- Generate Invoice Number (Standard Sequence) ---
     // Fetch company current invoice number FOR UPDATE
     const [companyData] = await db.query(
-      `SELECT current_invoice_number, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
+      `SELECT invoice_prefix, current_invoice_number, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
       [companyId]
     );
 
@@ -622,29 +622,11 @@ const convertEstimateToInvoice = async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const { current_invoice_number, invoice_separators } = companyData[0];
+    const { invoice_prefix, current_invoice_number, invoice_separators } = companyData[0];
     const nextInvoiceNumber = (current_invoice_number || 0) + 1;
 
-    // Estimate Number Format: PREFIX[-]YY[-]EST[-]SEQ
-    let prefix = 'INV';
-    const estNum = estimateData.estimate_number;
-
-    // Robust parsing using Regex to support both separators and no-separators
-    // Matches: (Prefix) optional-dash (2digits) optional-dash EST
-    // Regex: ^(.*?)[\-]?(\d{2})[\-]?EST
-    if (estNum) {
-      const match = estNum.match(/^(.*?)[\-]?(\d{2})[\-]?EST/);
-      if (match && match[1]) {
-        prefix = match[1];
-      } else {
-        // Fallback simple split if regex fails
-        prefix = estNum.split('-')[0];
-      }
-    }
-
-    // Clean up prefix if it ended with a dash that wasn't caught by regex separation
-    if (prefix.endsWith('-')) prefix = prefix.slice(0, -1);
-    if (!prefix) prefix = 'INV';
+    // Use company prefix or default 'INV'
+    const prefix = invoice_prefix || 'INV';
 
     // Generate YY format
     const now = new Date();
@@ -654,7 +636,7 @@ const convertEstimateToInvoice = async (req, res) => {
     const useSeparator = (invoice_separators !== 0 && invoice_separators !== false);
     const sep = useSeparator ? '-' : '';
 
-    // New Invoice Number: PREFIX[-]YY[-]INV[-]SEQ
+    // Standard Invoice Number: PREFIX[-]YY[-]INV[-]SEQ
     const invoiceNumber = `${prefix}${sep}${yy}${sep}INV${sep}${nextInvoiceNumber}`;
     console.log(`Converted Estimate to Invoice Number: ${invoiceNumber}`);
 
@@ -665,8 +647,8 @@ const convertEstimateToInvoice = async (req, res) => {
                 invoice_date, due_date, discount_type, discount_value, discount_amount,
                 notes, terms, shipping_address, shipping_cost, billing_address, ship_via, 
                 shipping_date, tracking_number, subtotal, tax_amount, total_amount,
-                status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, reference
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
     const invoiceValues = [
@@ -692,7 +674,8 @@ const convertEstimateToInvoice = async (req, res) => {
       estimateData.subtotal || 0.00,
       estimateData.tax_amount || 0.00,
       estimateData.total_amount || 0.00,
-      'draft' // Initial status
+      'draft', // Initial status
+      estimateData.estimate_number // Reference
     ];
 
     const [invoiceResult] = await db.query(invoiceQuery, invoiceValues);
@@ -745,10 +728,11 @@ const convertEstimateToInvoice = async (req, res) => {
       }
     }
 
-    // Update estimate status to 'converted' and set invoice_id
+    // Update estimate status to 'accepted' and set invoice_id
+    // Changed status from 'converted' to 'accepted' so it doesn't vanish if 'converted' is hidden
     const updateEstimateQuery = `
             UPDATE estimates 
-            SET status = 'converted', invoice_id = ?
+            SET status = 'accepted', invoice_id = ?
             WHERE id = ?
         `;
     await db.query(updateEstimateQuery, [invoiceResult.insertId, estimateId]);
