@@ -605,10 +605,13 @@ const convertEstimateToInvoice = async (req, res) => {
     const estimateData = estimate[0];
 
     // Check if estimate is already converted using status or invoice_id
+    // REMOVED check to allow multiple conversions as per user request
+    /*
     if (estimateData.status === 'converted' || estimateData.invoice_id !== null) {
       await db.query('ROLLBACK');
       return res.status(400).json({ error: "Estimate has already been converted to an invoice" });
     }
+    */
 
     // --- Generate Invoice Number (Standard Sequence) ---
     // Fetch company current invoice number FOR UPDATE

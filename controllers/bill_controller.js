@@ -57,19 +57,24 @@ const createBill = async (req, res) => {
     }
 
     // Recalculate total_price for each item using the correct field names from frontend
+    // UPDATED LOGIC: Input Price is Tax Exclusive (Forward Calculation)
     const recalculatedItems = items.map(item => {
       const quantity = Number(item.quantity) || 0;
-      const costPrice = Number(item.cost_price) || 0; // Using cost_price from frontend
+      const costPrice = Number(item.cost_price) || Number(item.unit_price) || 0; // Using cost_price from frontend
       const taxRate = Number(item.tax_rate) || 0;
 
-      // Calculate actual unit price (price before tax)
-      const actualUnitPrice = Number((costPrice / (1 + taxRate / 100)).toFixed(2));
-      const taxAmount = Number((actualUnitPrice * quantity * taxRate / 100).toFixed(2));
-      const totalPrice = Number((quantity * costPrice).toFixed(2));
+      // New Logic: costPrice IS the actual unit price (before tax)
+      const actualUnitPrice = Number(costPrice.toFixed(2));
+
+      const subtotal = actualUnitPrice * quantity;
+      const taxAmount = Number((subtotal * (taxRate / 100)).toFixed(2));
+      const totalPrice = Number((subtotal + taxAmount).toFixed(2));
 
       return {
         ...item,
-        actual_unit_price: actualUnitPrice,
+        actual_unit_price: actualUnitPrice, // Store as actual unit price
+        unit_price: actualUnitPrice,        // Store as unit price (cost price)
+        cost_price: actualUnitPrice,        // Normalize field
         tax_amount: taxAmount,
         total_price: totalPrice
       };
@@ -129,7 +134,7 @@ const createBill = async (req, res) => {
         item.product_name || '',
         item.description || '',
         Number(item.quantity) || 0,
-        Number(item.cost_price) || 0, // Using cost_price as unit_price
+        Number(item.actual_unit_price) || 0, // Using actual_unit_price (tax exclusive)
         Number(item.total_price) || 0,
       ];
 
@@ -160,31 +165,8 @@ const createBill = async (req, res) => {
         [billId, vendor_id, company_id, calculatedTotal, paymentDate, paymentMethodName, 'Auto-paid on Bill Creation']
       );
 
-      // Update Vendor Balance (Reduce debt? No, Bill increases debt (Credit). Payment reduces it (Debit).)
-      // When we create a Bill, we Owe money. Vendor Balance increases (Credit).
-      // When we Pay, Vendor Balance decreases.
-      // Since we are doing both at once (Bill + Pay), the net change to Vendor Balance is 0.
-      // BUT, we likely didn't increase the balance yet.
-      // Wait, standard flow: 
-      // 1. Create Bill -> Increase Vendor Balance (Liability).
-      // 2. Pay Bill -> Decrease Vendor Balance.
-
-      // So if we just default to 0 change, it might be fine, OR we do +Total then -Total.
-      // Let's see how `updateBill` or standard logic handles it. 
-      // Usually creation of Open Bill adds to Balance.
-      // We should first ADD to balance (for the bill creation), then SUBTRACT (for payment).
-
-      // Step 1 Check: Does Bill Creation usually update vendor balance? 
-      // Current code didn't seem to explicitly update Vendor Balance in `createBill`. 
-      // Checking previous `createBill`... No, it did NOT update `vendor` table balance!
-      // This might be a missing feature in original code or handled via triggers/calc properties?
-      // BUT `recordPayment` DOES update vendor balance (`UPDATE vendor SET balance = balance - ?`).
-      // So creating a bill SHOULD increase balance. 
-
-      // Let's add that logic to be correct:
+      // Increase Vendor Balance (Liability) then Decrease (Payment)
       await conn.execute('UPDATE vendor SET balance = balance + ? WHERE vendor_id = ?', [calculatedTotal, vendor_id]);
-
-      // Then immediately subtract it because it's paid
       await conn.execute('UPDATE vendor SET balance = balance - ? WHERE vendor_id = ?', [calculatedTotal, vendor_id]);
 
       // Effect: Balance unchanged.
@@ -199,7 +181,7 @@ const createBill = async (req, res) => {
       if (item.product_id) {
         await conn.execute(
           'UPDATE products SET quantity_on_hand = quantity_on_hand + ?, cost_price = ? WHERE id = ? AND company_id = ?',
-          [Number(item.quantity) || 0, Number(item.cost_price || item.unit_price) || 0, item.product_id, company_id]
+          [Number(item.quantity) || 0, Number(item.actual_unit_price) || 0, item.product_id, company_id]
         );
       }
     }
@@ -226,7 +208,7 @@ const createBill = async (req, res) => {
     for (const item of recalculatedItems) {
       if (item.product_id) {
         const qty = Number(item.quantity) || 0;
-        const rate = Number(item.cost_price || item.unit_price) || 0;
+        const rate = Number(item.actual_unit_price) || 0;
 
         await conn.execute(
           `INSERT INTO order_items (
@@ -254,11 +236,11 @@ const createBill = async (req, res) => {
     await conn.commit();
     res.status(201).json({ message: "Bill created successfully", billId, billNumber: finalBillNumber });
   } catch (error) {
-    await conn.rollback();
+    if (conn) await conn.rollback();
     console.error("Error creating bill:", error);
     res.status(500).json({ error: error.message || "Failed to create bill" });
   } finally {
-    conn.release();
+    if (conn) conn.release();
   }
 };
 
@@ -338,7 +320,7 @@ const updateBill = async (req, res) => {
     employee_id,
     due_date,
     notes,
-    total_amount,
+    total_amount, // We will recalculate this to be safe
     items,
   } = req.body;
 
@@ -348,6 +330,30 @@ const updateBill = async (req, res) => {
   await conn.beginTransaction();
 
   try {
+    // UPDATED LOGIC: Recalculate total_amount from items (Tax Exclusive Logic)
+    // Map items to calculate their totals first
+    const recalculatedItems = items.map(item => {
+      const quantity = Number(item.quantity) || 0;
+      const costPrice = Number(item.cost_price) || Number(item.unit_price) || 0;
+      const taxRate = Number(item.tax_rate) || 0;
+
+      const actualUnitPrice = Number(costPrice.toFixed(2));
+      const subtotal = actualUnitPrice * quantity;
+      const taxAmount = Number((subtotal * (taxRate / 100)).toFixed(2));
+      const totalPrice = Number((subtotal + taxAmount).toFixed(2));
+
+      return {
+        ...item,
+        actual_unit_price: actualUnitPrice,
+        unit_price: actualUnitPrice, // Store cost_price as unit_price
+        tax_amount: taxAmount,
+        total_price: totalPrice
+      };
+    });
+
+    const calculatedTotal = Number(recalculatedItems.reduce((sum, item) => sum + Number(item.total_price || 0), 0).toFixed(2));
+    console.log("Recalculated total for update:", calculatedTotal);
+
     // Update Bill - ensure all undefined values are converted to null
     const updateParams = [
       order_id || null,
@@ -356,7 +362,7 @@ const updateBill = async (req, res) => {
       due_date || null,
       payment_method_id || null,
       notes || null,
-      Number(total_amount) || 0,
+      calculatedTotal, // Use calculated total instead of req.body.total_amount
       bill_id,
       company_id,
     ];
@@ -371,14 +377,14 @@ const updateBill = async (req, res) => {
     // Replace Items
     await conn.execute(`DELETE FROM bill_items WHERE bill_id=?`, [bill_id]);
 
-    for (const item of items) {
+    for (const item of recalculatedItems) {
       const itemParams = [
         bill_id,
         item.product_id || null,
         item.product_name || '',
         item.description || '',
         Number(item.quantity) || 0,
-        Number(item.cost_price || item.unit_price) || 0, // Handle both field names
+        Number(item.actual_unit_price) || 0, // Using actual_unit_price (Tax Exclusive)
         Number(item.total_price) || 0,
       ];
 
