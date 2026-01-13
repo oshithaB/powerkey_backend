@@ -179,7 +179,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     for (const item of items) {
       // Backend recalculates tax_amount and total_price
       const subtotal = item.quantity * item.unit_price;
-      const actualUnitPrice = Number((item.unit_price / (1 + item.tax_rate / 100)).toFixed(2));
+      const actualUnitPrice = Number((item.unit_price / (1 + item.tax_rate / 100)).toFixed(4));
       const taxAmount = Number((actualUnitPrice * item.tax_rate / 100 * item.quantity).toFixed(2));
       const totalPrice = Number((subtotal).toFixed(2));
 
