@@ -1756,7 +1756,7 @@ const checkCustomerEligibility = async (req, res) => {
 
     let totalBalanceDue = currentBalance + invoice_total;
 
-    if (creditLimit < totalBalanceDue) {
+    if (creditLimit > 0 && creditLimit < totalBalanceDue) {
       connection.release();
       return res.status(403).json({ eligible: false, reason: "Customer's credit limit exceeded" });
     }
