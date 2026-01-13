@@ -350,6 +350,7 @@ async function createTables(db) {
             description TEXT NOT NULL,
             quantity DECIMAL(10,2) NOT NULL,
             unit_price DECIMAL(15,4) NOT NULL,
+            cost_price DECIMAL(15,4) DEFAULT 0,
             actual_unit_price DECIMAL(15,4) NOT NULL,
             tax_rate DECIMAL(10,5) NOT NULL,
             tax_amount DECIMAL(10,2) NOT NULL,
@@ -604,6 +605,58 @@ async function createTables(db) {
         }
     } catch (error) {
         console.warn('Migration for unique invoice number warning:', error.message);
+    }
+
+    const refundTables = [
+        `CREATE TABLE IF NOT EXISTS refunds (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company_id INT NOT NULL,
+            invoice_id INT NOT NULL,
+            refund_number VARCHAR(50) NOT NULL UNIQUE,
+            refund_date VARCHAR(255) NOT NULL,
+            reason TEXT,
+            subtotal DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            total_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (company_id) REFERENCES company(company_id) ON DELETE CASCADE,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS refund_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            refund_id INT NOT NULL,
+            product_id INT,
+            product_name VARCHAR(255),
+            description TEXT,
+            quantity DECIMAL(10,2) NOT NULL,
+            unit_price DECIMAL(15,4) NOT NULL,
+            tax_rate DECIMAL(10,5) NOT NULL DEFAULT 0.00,
+            tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            total_price DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            FOREIGN KEY (refund_id) REFERENCES refunds(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+        )`
+    ];
+
+    for (const table of refundTables) {
+        try {
+            await db.execute(table);
+        } catch (error) {
+            console.error('Error creating refund table:', error);
+        }
+    }
+
+    // --- MIGRATION FOR REFUND NUMBERING ---
+    try {
+        console.log('Checking and updating company table for refund numbering...');
+        const [columns] = await db.execute("SHOW COLUMNS FROM company LIKE 'refund_prefix'");
+        if (columns.length === 0) {
+            await db.execute("ALTER TABLE company ADD COLUMN refund_prefix VARCHAR(10) DEFAULT 'REF'");
+            await db.execute("ALTER TABLE company ADD COLUMN current_refund_number INT DEFAULT 0");
+            console.log('Company table updated with refund numbering columns.');
+        }
+    } catch (error) {
+        console.error('Migration for refund numbering failed:', error);
     }
 
     // --- MIGRATION FOR OPTIONAL BILL PAYMENT METHOD ---

@@ -39,7 +39,7 @@ const createInvoice = asyncHandler(async (req, res) => {
   if (!company_id) return res.status(422).json({ error: "Company ID is required" });
   if (!customer_id) return res.status(422).json({ error: "Customer ID is required" });
   if (!invoice_date) return res.status(422).json({ error: "Invoice date is required" });
-  if (!subtotal || isNaN(subtotal)) return res.status(422).json({ error: "Valid subtotal is required" });
+  if ((subtotal === undefined || subtotal === null) || isNaN(subtotal)) return res.status(422).json({ error: "Valid subtotal is required" });
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(422).json({ error: "At least one valid item is required" });
   }
@@ -62,7 +62,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     if (!item.quantity || item.quantity <= 0) {
       return res.status(422).json({ error: "Each item must have a valid quantity" });
     }
-    if (!item.unit_price || item.unit_price < 0) {
+    if ((item.unit_price === undefined || item.unit_price === null) || item.unit_price < 0) {
       return res.status(422).json({ error: "Each item must have a valid unit price" });
     }
     if (item.tax_rate < 0 || isNaN(item.tax_rate)) {
@@ -173,8 +173,8 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     // --- Insert invoice items ---
     const itemQuery = `INSERT INTO invoice_items
-      (invoice_id, product_id, product_name, description, quantity, unit_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      (invoice_id, product_id, product_name, description, quantity, unit_price, cost_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     for (const item of items) {
       // Backend recalculates tax_amount and total_price
@@ -183,6 +183,19 @@ const createInvoice = asyncHandler(async (req, res) => {
       const taxAmount = Number((actualUnitPrice * item.tax_rate / 100 * item.quantity).toFixed(2));
       const totalPrice = Number((subtotal).toFixed(2));
 
+      // Fetch product details including cost_price
+      const [productRows] = await connection.query(
+        `SELECT quantity_on_hand, cost_price FROM products WHERE id = ? AND company_id = ?`,
+        [item.product_id, company_id]
+      );
+
+      if (productRows.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ error: `${item.product_name} not found.` });
+      }
+
+      const costPrice = Number(productRows[0].cost_price || 0);
+      const availableQuantity = Number(productRows[0].quantity_on_hand);
 
       const itemData = [
         invoiceId,
@@ -191,6 +204,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         item.description,
         item.quantity,
         item.unit_price,
+        costPrice, // Insert cost_price
         actualUnitPrice,
         item.tax_rate,
         taxAmount,
@@ -199,15 +213,6 @@ const createInvoice = asyncHandler(async (req, res) => {
 
       // Check stock (if not proforma)
       if (status !== 'proforma') {
-        const [productRows] = await connection.query(
-          `SELECT quantity_on_hand FROM products WHERE id = ? AND company_id = ?`,
-          [item.product_id, company_id]
-        );
-        if (productRows.length === 0) {
-          await connection.rollback();
-          return res.status(404).json({ error: `${item.product_name} not found.` });
-        }
-        const availableQuantity = Number(productRows[0].quantity_on_hand);
         if (availableQuantity < Number(item.quantity)) {
           await connection.rollback();
           return res.status(404).json({
@@ -417,7 +422,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
   if (!invoice_date) {
     return res.status(400).json({ error: "Invoice date is required" });
   }
-  if (!subtotal || isNaN(subtotal)) {
+  if ((subtotal === undefined || subtotal === null) || isNaN(subtotal)) {
     return res.status(400).json({ error: "Valid subtotal is required" });
   }
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -435,7 +440,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
     if (!item.quantity || item.quantity <= 0) {
       return res.status(400).json({ error: "Each item must have a valid quantity" });
     }
-    if (!item.unit_price || item.unit_price < 0) {
+    if ((item.unit_price === undefined || item.unit_price === null) || item.unit_price < 0) {
       return res.status(400).json({ error: "Each item must have a valid unit price" });
     }
     if (item.tax_rate < 0) {
@@ -1429,6 +1434,13 @@ const getInvoices = async (req, res) => {
           updated_at: item.updated_at ? new Date(item.updated_at).toISOString() : null
         }));
 
+        // Check for refunds
+        const [refundRows] = await connection.query(
+          `SELECT count(*) as count FROM refunds WHERE invoice_id = ? AND company_id = ?`,
+          [invoice.id, company_id]
+        );
+        invoice.has_refunds = refundRows[0].count > 0;
+
         invoice.invoice_date = invoice.invoice_date ? new Date(invoice.invoice_date).toISOString() : null;
         invoice.due_date = invoice.due_date ? new Date(invoice.due_date).toISOString() : null;
         invoice.shipping_date = invoice.shipping_date ? new Date(invoice.shipping_date).toISOString() : null;
@@ -1771,6 +1783,7 @@ const checkCustomerEligibility = async (req, res) => {
   }
 };
 
+
 // get sales page data
 const getSalesPageDate = async (req, res) => {
   const { company_id } = req.params;
@@ -1898,14 +1911,9 @@ const cancelInvoice = asyncHandler(async (req, res) => {
         // Clear stock detail in invoice item (optional)
         await connection.query(
           `UPDATE invoice_items SET stock_detail = '[]' WHERE id = ?`,
-          [item.id] // Assuming item has id, but query above selected product_id, quantity, stock_detail. Need ID!
+          [item.id]
         );
-        // Correction: need item ID to update it.
       }
-
-      // Re-fetch items with ID for accuracy in update above, or just rely on loop.
-      // Actually, the previous loop missed `id` in select. 
-      // Let's fix the select in the loop above.
 
       // Adjust Customer Balance
       await connection.query(
@@ -1933,6 +1941,400 @@ const cancelInvoice = asyncHandler(async (req, res) => {
   }
 });
 
+// Process Refund
+const processRefund = asyncHandler(async (req, res) => {
+  const { invoiceId, companyId, refundItems, date, reason, paymentMethod } = req.body;
+
+  // Support both naming conventions
+  const cId = companyId || req.body.company_id;
+
+  console.log(`Processing refund for Invoice ID: ${invoiceId}, Company: ${cId}`);
+
+  if (!invoiceId || !cId || !refundItems || !Array.isArray(refundItems)) {
+    return res.status(400).json({ error: "Invalid request data" });
+  }
+
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    // 1. Get Invoice Details
+    const [invoiceRows] = await connection.query(
+      `SELECT * FROM invoices WHERE id = ? AND company_id = ?`,
+      [invoiceId, cId]
+    );
+
+    if (invoiceRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const invoice = invoiceRows[0];
+
+    if (!['paid', 'partially_paid'].includes(invoice.status)) {
+      await connection.rollback();
+      return res.status(400).json({ error: "Only paid or partially paid invoices can be refunded" });
+    }
+
+    // --- Generate Refund Number ---
+    const [companyRows] = await connection.query(
+      `SELECT refund_prefix, current_refund_number, invoice_separators FROM company WHERE company_id = ?`,
+      [cId]
+    );
+    const companySettings = companyRows[0] || {};
+    const refundPrefix = companySettings.refund_prefix || 'REF';
+    const nextRefundNum = (companySettings.current_refund_number || 0) + 1;
+    const separator = companySettings.invoice_separators ? '-' : '';
+    const refundNumber = `${refundPrefix}${separator}${String(nextRefundNum).padStart(5, '0')}`;
+
+    // Update next refund number
+    await connection.query(
+      `UPDATE company SET current_refund_number = ? WHERE company_id = ?`,
+      [nextRefundNum, cId]
+    );
+
+    let totalRefundGross = 0; // The total money to give back
+    let totalTaxRefunded = 0;
+    let totalSubtotalRefunded = 0; // Excludes tax
+
+    const processedItems = [];
+
+    // 2. Process Items (Restock & Calculate Refund)
+    for (const refundItem of refundItems) {
+      const { invoice_item_id, quantity_to_return, refund_unit_price } = refundItem;
+
+      if (quantity_to_return <= 0) continue;
+
+      const [itemRows] = await connection.query(
+        `SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ?`,
+        [invoice_item_id, invoiceId]
+      );
+
+      if (itemRows.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ error: `Invoice item ${invoice_item_id} not found` });
+      }
+
+      const item = itemRows[0];
+
+      if (quantity_to_return > item.quantity) {
+        await connection.rollback();
+        return res.status(400).json({ error: `Cannot return more than purchased quantity for item ${item.product_name}` });
+      }
+
+      // Determine Refund Price (Gross or Net?)
+      // We assume unit_price in DB is GROSS (inclusive).
+      // If user sends refund_unit_price, we treat it as the GROSS price they want to refund per unit.
+      const priceToRefundPerUnit = (refund_unit_price !== undefined && refund_unit_price !== null)
+        ? Number(refund_unit_price)
+        : Number(item.unit_price);
+
+      const itemTotalRefund = Number((quantity_to_return * priceToRefundPerUnit).toFixed(2));
+      totalRefundGross += itemTotalRefund;
+
+      // Calculate tax portion of this refund
+      // We assume the tax PROPORTION remains same as original item.
+      // Rate = item.tax_rate
+      // If priceToRefundPerUnit is Gross, then Net = Gross / (1 + Rate/100)
+      // Tax = Gross - Net
+      const taxRate = Number(item.tax_rate);
+      const netRefundPerUnit = priceToRefundPerUnit / (1 + taxRate / 100);
+      const taxRefundPerUnit = priceToRefundPerUnit - netRefundPerUnit;
+
+      const itemTaxRefund = Number((taxRefundPerUnit * quantity_to_return).toFixed(2));
+      const itemSubtotalRefund = Number((netRefundPerUnit * quantity_to_return).toFixed(2));
+
+      totalTaxRefunded += itemTaxRefund;
+      totalSubtotalRefunded += itemSubtotalRefund;
+
+      processedItems.push({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        description: item.description,
+        quantity: quantity_to_return,
+        unit_price: priceToRefundPerUnit, // Gross
+        tax_rate: taxRate,
+        tax_amount: itemTaxRefund,
+        total_price: itemTotalRefund // Gross
+      });
+
+      // --- Restock Logic ---
+      await connection.query(
+        `UPDATE products SET quantity_on_hand = quantity_on_hand + ? WHERE id = ?`,
+        [quantity_to_return, item.product_id]
+      );
+
+      const stockDetails = typeof item.stock_detail === 'string'
+        ? JSON.parse(item.stock_detail || '[]')
+        : (item.stock_detail || []);
+
+      let qtyRestocked = 0;
+
+      for (let i = stockDetails.length - 1; i >= 0 && qtyRestocked < quantity_to_return; i--) {
+        const detail = stockDetails[i];
+        const availableToReturn = detail.used_qty;
+        const neededToReturn = quantity_to_return - qtyRestocked;
+
+        const toReturn = Math.min(availableToReturn, neededToReturn);
+
+        await connection.query(
+          `UPDATE order_items 
+             SET remaining_qty = remaining_qty + ?, stock_status = 'in_stock'
+             WHERE id = ?`,
+          [toReturn, detail.order_item_id]
+        );
+
+        detail.used_qty -= toReturn;
+        qtyRestocked += toReturn;
+      }
+
+      // --- Update Invoice Item ---
+      // We reduce quantity. But what about price? 
+      // If we refund partial *value* but keep item? 
+      // Usually refund implies return of goods.
+      // We update invoice item to match what is KEPT.
+      const newQuantity = item.quantity - quantity_to_return;
+
+      // We must calculate the new Totals for the line item based on REMAINING quantity
+      // Assuming original unit price applies to remaining items.
+
+      if (newQuantity === 0) {
+        await connection.query(`DELETE FROM invoice_items WHERE id = ?`, [item.id]);
+      } else {
+        // Recalculate based on original unit price
+        // (Keeping original price structure for remaining items)
+        const keptSubtotal = newQuantity * item.unit_price; // Gross
+        const keptNet = keptSubtotal / (1 + item.tax_rate / 100);
+        const keptTax = keptSubtotal - keptNet;
+
+        const newTaxAmount = Number(keptTax.toFixed(2));
+        const newTotalPrice = Number(keptSubtotal.toFixed(2));
+        const newStockDetail = JSON.stringify(stockDetails.filter(d => d.used_qty > 0));
+
+        await connection.query(
+          `UPDATE invoice_items 
+           SET quantity = ?, tax_amount = ?, total_price = ?, stock_detail = ?
+           WHERE id = ?`,
+          [newQuantity, newTaxAmount, newTotalPrice, newStockDetail, item.id]
+        );
+      }
+    }
+
+    // 3. Create Refund Record
+    const [refundResult] = await connection.query(
+      `INSERT INTO refunds (company_id, invoice_id, refund_number, refund_date, reason, subtotal, tax_amount, total_amount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [cId, invoiceId, refundNumber, date || new Date(), reason, totalSubtotalRefunded, totalTaxRefunded, totalRefundGross]
+    );
+    const refundId = refundResult.insertId;
+
+    // 4. Create Refund Items
+    for (const item of processedItems) {
+      await connection.query(
+        `INSERT INTO refund_items (refund_id, product_id, product_name, description, quantity, unit_price, tax_rate, tax_amount, total_price)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [refundId, item.product_id, item.product_name, item.description, item.quantity, item.unit_price, item.tax_rate, item.tax_amount, item.total_price]
+      );
+    }
+
+    // 5. Update Invoice Totals
+    // Deduct the refunded AMOUNTS from invoice totals
+    // Wait, if we use custom price, we might refund MORE or LESS than original value.
+    // But invoice totals represent the value of goods SOLD.
+    // If goods are returned, the invoice totals should reflect the goods KEPT.
+    // So we should recalculate invoice based on remaining items?
+    // In step 2, we updated invoice lines.
+
+    // Let's sum up current invoice lines to get new invoice total.
+    const [finalItems] = await connection.query(
+      `SELECT SUM(total_price) as total, SUM(tax_amount) as tax, SUM(total_price - tax_amount) as subtotal FROM invoice_items WHERE invoice_id = ?`,
+      [invoiceId]
+    );
+
+    const newTotalAmount = Number(finalItems[0].total || 0);
+    const newTaxAmount = Number(finalItems[0].tax || 0);
+    const newSubtotal = Number(finalItems[0].subtotal || 0);
+
+    // 6. Financial Refund Recording
+    // Reduce Paid Amount implies we carry less revenue.
+    // We issue a negative payment validation.
+    const newPaidAmount = Math.max(0, invoice.paid_amount - totalRefundGross);
+
+    await connection.query(
+      `INSERT INTO payments (invoice_id, customer_id, company_id, payment_amount, payment_date, payment_method, notes, deposit_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [invoiceId, invoice.customer_id, cId, -totalRefundGross, date || new Date(), paymentMethod || 'Refund', `Refund #${refundNumber} - ${reason || ''}`, 'Refund']
+    );
+
+    // Update Invoice Records
+    await connection.query(
+      `UPDATE invoices 
+       SET subtotal = ?, tax_amount = ?, total_amount = ?, paid_amount = ?, balance_due = 0, updated_at = ?
+       WHERE id = ?`,
+      [newSubtotal, newTaxAmount, newTotalAmount, newPaidAmount, new Date(), invoiceId]
+    );
+
+    // Update Customer Balance
+    // 1. Invoice value reduced by (OldTotal - NewTotal) -> Balance Decreases.
+    // 2. We pay back cash (Negative Payment) -> Balance Increases.
+    // Net result depends on if (OldTotal - NewTotal) == TotalRefundGross.
+    // If we refunded custom price, they might differ.
+    // Example: Sold for 100. Returned. Refunded 90.
+    // New Invoice Total: 0. Balance reduced by 100.
+    // Payment: -90. Balance increased by 90.
+    // Net change: -10. (Customer overpaid 10? No, we kept 10).
+    // Current Balance should reflect what they owe. 0.
+    // If we kept 10, it's income.
+
+    // Logic:
+    // Old Balance = Invoice(100) - Paid(100) = 0.
+    // New Invoice(0).
+    // Payments: 100 + (-90) = 10.
+    // New Balance = Invoice(0) - Payments(10) = -10. (Use has credit of 10).
+    // Correct? Yes, we owe them 10 if we didn't refund it? No.
+    // We kept 10 as restocking fee.
+    // Wait, if Invoice is 0, we shouldn't have any balance due.
+    // If payments sum to 10, and invoice is 0, we have overpayment of 10.
+    // To match reality: We refunded 90 cash. We kept 10.
+    // So we need to ensure customer balance is correct.
+
+    // Standard approach:
+    // Update Customer Balance by adding (OldTotal - NewTotal) - RefundedCash?
+
+    // Let's use the simplest truth:
+    // Customer Balance = Sum of Invoices - Sum of Payments.
+    // We don't recalculate from scratch usually. We do incremental updates.
+    // Delta Invoice = NewInvoiceTotal - OldInvoiceTotal (Generic negative amount).
+    // Delta Payment = -TotalRefundGross.
+
+    // Balance Change = Delta Invoice - Delta Payment (since Balance = Inv - Pay)
+    //                = (NewTotal - OldTotal) - (-TotalRefundGross)
+    //                = (NewTotal - OldTotal) + TotalRefundGross.
+
+    // Case 1: Full Refund same price. 
+    // New=0, Old=100. DeltaInv = -100.
+    // Refund=100.
+    // Change = -100 + 100 = 0. Correct.
+
+    // Case 2: Refund 90 for 100 item. 
+    // New=0, Old=100. DeltaInv = -100.
+    // Refund=90.
+    // Change = -100 + 90 = -10.
+    // Customer Balance decreases by 10. (They have credit/we owe them? No wait).
+    // Balance = Debt.
+    // If Balance is -10, it means they Overpaid 10.
+    // If we kept 10 fee, we should leave Invoice total at 10? 
+    // If we return item, usually invoice line is removed. 
+    // If we charge a fee, we should add a line item "Restocking Fee" 10.
+    // But here we just reduce invoice to 0.
+    // So yes, technically they paid 100, got 90 back, so they paid 10 net. 
+    // For 0 goods. So they overpaid 10. 
+    // So Balance -10 is correct.
+
+    const deltaInvoice = newTotalAmount - invoice.total_amount;
+    const deltaPayment = -totalRefundGross;
+    const balanceChange = deltaInvoice - deltaPayment;
+
+    await connection.query(
+      `UPDATE customer SET current_balance = current_balance + ? WHERE id = ?`,
+      [balanceChange, invoice.customer_id]
+    );
+
+    await connection.commit();
+
+    res.status(200).json({
+      message: "Refund processed successfully",
+      refundAmount: totalRefundGross,
+      invoiceId: invoiceId,
+      refundNumber: refundNumber,
+      refundId: refundId
+    });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error processing refund:', error);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    connection.release();
+  }
+});
+
+
+// Get Refunds for an Invoice
+const getInvoiceRefunds = asyncHandler(async (req, res) => {
+  const { company_id, invoice_id } = req.params;
+
+  if (!company_id || !invoice_id) {
+    return res.status(400).json({ error: "Company ID and Invoice ID are required" });
+  }
+
+  try {
+    // Fetch refunds with items
+    const [rows] = await db.execute(`
+      SELECT 
+        r.id as refund_id,
+        r.refund_number,
+        r.refund_date,
+        r.reason,
+        r.subtotal as refund_subtotal,
+        r.tax_amount as refund_tax_amount,
+        r.total_amount as refund_total_amount,
+        ri.id as item_id,
+        ri.product_id,
+        ri.product_name,
+        ri.description,
+        ri.quantity,
+        ri.unit_price,
+        ri.tax_rate,
+        ri.tax_amount,
+        ri.total_price
+      FROM refunds r
+      LEFT JOIN refund_items ri ON r.id = ri.refund_id
+      WHERE r.invoice_id = ? AND r.company_id = ?
+      ORDER BY r.created_at DESC
+    `, [invoice_id, company_id]);
+
+    // Group items by refund
+    const refundsMap = new Map();
+
+    rows.forEach(row => {
+      if (!refundsMap.has(row.refund_id)) {
+        refundsMap.set(row.refund_id, {
+          id: row.refund_id,
+          refund_number: row.refund_number,
+          refund_date: row.refund_date,
+          reason: row.reason,
+          subtotal: row.refund_subtotal,
+          tax_amount: row.refund_tax_amount,
+          total_amount: row.refund_total_amount,
+          items: []
+        });
+      }
+
+      if (row.item_id) {
+        refundsMap.get(row.refund_id).items.push({
+          id: row.item_id,
+          product_id: row.product_id,
+          product_name: row.product_name,
+          description: row.description,
+          quantity: row.quantity,
+          unit_price: row.unit_price,
+          tax_rate: row.tax_rate,
+          tax_amount: row.tax_amount,
+          total_price: row.total_price
+        });
+      }
+    });
+
+    res.json(Array.from(refundsMap.values()));
+
+  } catch (error) {
+    console.error('Error fetching refunds:', error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 module.exports = {
   createInvoice,
   updateInvoice,
@@ -1945,5 +2347,7 @@ module.exports = {
   getInvoicesByCustomer,
   recordPayment,
   checkCustomerEligibility,
-  cancelInvoice
+  cancelInvoice,
+  processRefund,
+  getInvoiceRefunds
 };

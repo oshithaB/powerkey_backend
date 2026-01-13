@@ -21,31 +21,23 @@ const getARAgingSummary = async (req, res) => {
             }
         }
 
-        // Calculate aging periods (future dates from current date)
-        const next15Days = new Date(currentDate);
-        next15Days.setDate(currentDate.getDate() + 15);
-        
-        const next30Days = new Date(currentDate);
-        next30Days.setDate(currentDate.getDate() + 30);
-        
-        const next60Days = new Date(currentDate);
-        next60Days.setDate(currentDate.getDate() + 60);
+
 
         const query = `
             SELECT 
                 co.name AS company_name,
                 c.id AS customer_id,
                 c.name AS customer_name,
-                -- Due today (due_date equals current date)
-                SUM(CASE WHEN i.due_date = ? THEN i.balance_due ELSE 0 END) AS due_today,
-                -- 1-15 days (due_date between current date and 15 days from now)
-                SUM(CASE WHEN i.due_date > ? AND i.due_date <= ? THEN i.balance_due ELSE 0 END) AS due_15_days,
-                -- 16-30 days (due_date between 15 and 30 days from now)
-                SUM(CASE WHEN i.due_date > ? AND i.due_date <= ? THEN i.balance_due ELSE 0 END) AS due_30_days,
-                -- 31-60 days (due_date between 30 and 60 days from now)
-                SUM(CASE WHEN i.due_date > ? AND i.due_date <= ? THEN i.balance_due ELSE 0 END) AS due_60_days,
-                -- Over 60 days (due_date before current date or more than 60 days in future)
-                SUM(CASE WHEN i.due_date < ? OR i.due_date IS NULL THEN i.balance_due ELSE 0 END) AS over_60_days,
+                -- Current (Not yet due)
+                SUM(CASE WHEN DATEDIFF(?, i.due_date) < 0 THEN i.balance_due ELSE 0 END) AS current,
+                -- 1-30 days past due
+                SUM(CASE WHEN DATEDIFF(?, i.due_date) BETWEEN 1 AND 30 THEN i.balance_due ELSE 0 END) AS due_1_30,
+                -- 31-60 days past due
+                SUM(CASE WHEN DATEDIFF(?, i.due_date) BETWEEN 31 AND 60 THEN i.balance_due ELSE 0 END) AS due_31_60,
+                -- 61-90 days past due
+                SUM(CASE WHEN DATEDIFF(?, i.due_date) BETWEEN 61 AND 90 THEN i.balance_due ELSE 0 END) AS due_61_90,
+                -- Over 90 days past due
+                SUM(CASE WHEN DATEDIFF(?, i.due_date) > 90 THEN i.balance_due ELSE 0 END) AS over_90,
                 -- Total balance due
                 SUM(i.balance_due) AS total_due
             FROM 
@@ -59,7 +51,6 @@ const getARAgingSummary = async (req, res) => {
                 AND i.status != 'paid'
                 AND i.balance_due > 0
                 AND i.company_id = ?
-                AND i.invoice_date >= ?
                 AND i.invoice_date <= ?
             GROUP BY 
                 co.name, c.id, c.name
@@ -70,14 +61,13 @@ const getARAgingSummary = async (req, res) => {
         `;
 
         const params = [
-            currentDate.toISOString().split('T')[0], // due_today
-            currentDate.toISOString().split('T')[0], next15Days.toISOString().split('T')[0], // 1-15 days
-            next15Days.toISOString().split('T')[0], next30Days.toISOString().split('T')[0], // 16-30 days
-            next30Days.toISOString().split('T')[0], next60Days.toISOString().split('T')[0], // 31-60 days
-            currentDate.toISOString().split('T')[0], // over 60 days (overdue)
+            currentDate.toISOString().split('T')[0], // For current
+            currentDate.toISOString().split('T')[0], // For 1-30
+            currentDate.toISOString().split('T')[0], // For 31-60
+            currentDate.toISOString().split('T')[0], // For 61-90
+            currentDate.toISOString().split('T')[0], // For >90
             company_id,
-            startDate.toISOString().split('T')[0],
-            currentDate.toISOString().split('T')[0]
+            currentDate.toISOString().split('T')[0] // For invoice_date filter
         ];
 
         const [results] = await db.execute(query, params);
@@ -86,17 +76,17 @@ const getARAgingSummary = async (req, res) => {
             customerId: row.customer_id,
             companyName: row.company_name,
             customerName: row.customer_name,
-            dueToday: parseFloat(row.due_today || 0).toFixed(2),
-            due15Days: parseFloat(row.due_15_days || 0).toFixed(2),
-            due30Days: parseFloat(row.due_30_days || 0).toFixed(2),
-            due60Days: parseFloat(row.due_60_days || 0).toFixed(2),
-            over60Days: parseFloat(row.over_60_days || 0).toFixed(2),
+            current: parseFloat(row.current || 0).toFixed(2),
+            due1to30Days: parseFloat(row.due_1_30 || 0).toFixed(2),
+            due31to60Days: parseFloat(row.due_31_60 || 0).toFixed(2),
+            due61to90Days: parseFloat(row.due_61_90 || 0).toFixed(2),
+            over90Days: parseFloat(row.over_90 || 0).toFixed(2),
             total: parseFloat(
-                parseFloat(row.due_today || 0) + 
-                parseFloat(row.due_15_days || 0) + 
-                parseFloat(row.due_30_days || 0) + 
-                parseFloat(row.due_60_days || 0) + 
-                parseFloat(row.over_60_days || 0)
+                parseFloat(row.current || 0) +
+                parseFloat(row.due_1_30 || 0) +
+                parseFloat(row.due_31_60 || 0) +
+                parseFloat(row.due_61_90 || 0) +
+                parseFloat(row.over_90 || 0)
             ).toFixed(2),
             totalDue: parseFloat(row.total_due || 0).toFixed(2)
         }));
@@ -174,8 +164,8 @@ const getCustomerInvoices = async (req, res) => {
         res.status(200).json({
             success: true,
             data: invoices, // This will be an empty array if no invoices found
-            message: invoices.length > 0 
-                ? 'Customer invoices retrieved successfully' 
+            message: invoices.length > 0
+                ? 'Customer invoices retrieved successfully'
                 : 'No invoices found for the specified customer in the given date range'
         });
     } catch (error) {
@@ -208,12 +198,7 @@ const getARAgingSummaryInDetails = async (req, res) => {
             }
         }
 
-        const next15Days = new Date(currentDate);
-        next15Days.setDate(currentDate.getDate() + 15);
-        const next30Days = new Date(currentDate);
-        next30Days.setDate(currentDate.getDate() + 30);
-        const next60Days = new Date(currentDate);
-        next60Days.setDate(currentDate.getDate() + 60);
+
 
         const query = `
             SELECT 
@@ -228,11 +213,11 @@ const getARAgingSummaryInDetails = async (req, res) => {
                 c.name AS customer_name,
                 co.name AS company_name,
                 CASE 
-                    WHEN i.due_date = ? THEN 'due_today'
-                    WHEN i.due_date > ? AND i.due_date <= ? THEN 'due_15_days'
-                    WHEN i.due_date > ? AND i.due_date <= ? THEN 'due_30_days'
-                    WHEN i.due_date > ? AND i.due_date <= ? THEN 'due_60_days'
-                    WHEN i.due_date < ? OR i.due_date IS NULL THEN 'over_60_days'
+                    WHEN DATEDIFF(?, i.due_date) < 0 THEN 'current'
+                    WHEN DATEDIFF(?, i.due_date) BETWEEN 1 AND 30 THEN 'due_1_30'
+                    WHEN DATEDIFF(?, i.due_date) BETWEEN 31 AND 60 THEN 'due_31_60'
+                    WHEN DATEDIFF(?, i.due_date) BETWEEN 61 AND 90 THEN 'due_61_90'
+                    WHEN DATEDIFF(?, i.due_date) > 90 THEN 'over_90'
                 END AS aging_category
             FROM 
                 invoices i
@@ -245,33 +230,31 @@ const getARAgingSummaryInDetails = async (req, res) => {
                 AND i.balance_due > 0
                 AND i.company_id = ?
                 AND i.customer_id = ?
-                AND i.invoice_date >= ?
                 AND i.invoice_date <= ?
             ORDER BY 
                 i.invoice_date DESC
         `;
 
         const params = [
-            currentDate.toISOString().split('T')[0],
-            currentDate.toISOString().split('T')[0], next15Days.toISOString().split('T')[0],
-            next15Days.toISOString().split('T')[0], next30Days.toISOString().split('T')[0],
-            next30Days.toISOString().split('T')[0], next60Days.toISOString().split('T')[0],
-            currentDate.toISOString().split('T')[0],
+            currentDate.toISOString().split('T')[0], // current
+            currentDate.toISOString().split('T')[0], // 1-30
+            currentDate.toISOString().split('T')[0], // 31-60
+            currentDate.toISOString().split('T')[0], // 61-90
+            currentDate.toISOString().split('T')[0], // >90
             company_id,
             customer_id,
-            startDate.toISOString().split('T')[0],
-            currentDate.toISOString().split('T')[0]
+            currentDate.toISOString().split('T')[0] // invoice_date filter
         ];
 
         const [results] = await db.execute(query, params);
 
         // Group invoices by aging category
         const groupedInvoices = {
-            due_today: [],
-            due_15_days: [],
-            due_30_days: [],
-            due_60_days: [],
-            over_60_days: []
+            current: [],
+            due_1_30: [],
+            due_31_60: [],
+            due_61_90: [],
+            over_90: []
         };
 
         results.forEach(row => {

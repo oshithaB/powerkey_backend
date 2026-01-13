@@ -318,7 +318,7 @@ const getSalesByProductServiceSummary = async (req, res) => {
           p.unit_price,
           p.cost_price,
           p.manual_count,
-          SUM(p.cost_price * ii.quantity) AS total_cost,
+          SUM(CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END * ii.quantity) AS total_cost,
           SUM(ii.quantity) AS total_quantity_sold,
           SUM(ii.total_price) AS total_sales
        FROM products p
@@ -432,7 +432,7 @@ const getIncomeByCustomerSummary = async (req, res) => {
           SELECT 
               c.id AS customer_id,
               c.name AS customer_name,
-              COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+              COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
           FROM invoices i
           INNER JOIN invoice_items ii ON i.id = ii.invoice_id
           LEFT JOIN products p ON ii.product_id = p.id
@@ -540,8 +540,8 @@ const getSalesByProductServiceDetail = async (req, res) => {
           p.id AS product_id,
           p.name AS product_name,
           p.sku,
-          p.cost_price,
-          p.cost_price * ii.quantity AS total_cost,
+          COALESCE(CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END, 0) AS cost_price,
+          (CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END * ii.quantity) AS total_cost,
           ii.description,
           ii.quantity,
           ii.unit_price,
