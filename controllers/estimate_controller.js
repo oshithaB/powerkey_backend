@@ -241,7 +241,7 @@ const createEstimate = async (req, res) => {
     // Recalculate item values
     const updatedItems = items.map(item => {
       const subtotal = item.quantity * item.unit_price;
-      const actualUnitPrice = Number((item.unit_price / (1 + item.tax_rate / 100)).toFixed(2));
+      const actualUnitPrice = Number((item.unit_price / (1 + item.tax_rate / 100)).toFixed(4));
       const taxAmount = Number((actualUnitPrice * item.tax_rate / 100 * item.quantity).toFixed(2));
       const totalPrice = Number(subtotal.toFixed(2));
 

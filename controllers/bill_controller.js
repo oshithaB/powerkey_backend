@@ -64,7 +64,7 @@ const createBill = async (req, res) => {
       const taxRate = Number(item.tax_rate) || 0;
 
       // New Logic: costPrice IS the actual unit price (before tax)
-      const actualUnitPrice = Number(costPrice.toFixed(2));
+      const actualUnitPrice = Number(costPrice.toFixed(4));
 
       const subtotal = actualUnitPrice * quantity;
       const taxAmount = Number((subtotal * (taxRate / 100)).toFixed(2));
@@ -337,7 +337,7 @@ const updateBill = async (req, res) => {
       const costPrice = Number(item.cost_price) || Number(item.unit_price) || 0;
       const taxRate = Number(item.tax_rate) || 0;
 
-      const actualUnitPrice = Number(costPrice.toFixed(2));
+      const actualUnitPrice = Number(costPrice.toFixed(4));
       const subtotal = actualUnitPrice * quantity;
       const taxAmount = Number((subtotal * (taxRate / 100)).toFixed(2));
       const totalPrice = Number((subtotal + taxAmount).toFixed(2));
