@@ -69,7 +69,7 @@ class ReportController {
             // Cost of Sales - Based on product cost prices
             const [costOfSalesResult] = await db.execute(`
                 SELECT 
-                    COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+                    COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
                 FROM invoices i
                 INNER JOIN invoice_items ii ON i.id = ii.invoice_id
                 LEFT JOIN products p ON ii.product_id = p.id
@@ -327,7 +327,7 @@ class ReportController {
                 // Cost of Sales
                 const [costOfSalesResult] = await db.execute(`
                     SELECT 
-                        COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+                        COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
                     FROM invoices i
                     INNER JOIN invoice_items ii ON i.id = ii.invoice_id
                     LEFT JOIN products p ON ii.product_id = p.id
@@ -512,7 +512,7 @@ class ReportController {
             // Cost of Sales - Based on product cost prices
             const [costOfSalesResult] = await db.execute(`
                 SELECT 
-                    COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+                    COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
                 FROM invoices i
                 INNER JOIN invoice_items ii ON i.id = ii.invoice_id
                 LEFT JOIN products p ON ii.product_id = p.id
@@ -846,7 +846,7 @@ class ReportController {
                 SELECT 
                     e.id AS employee_id,
                     e.name AS employee_name,
-                    COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+                    COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
                 FROM invoices i
                 INNER JOIN invoice_items ii ON i.id = ii.invoice_id
                 LEFT JOIN products p ON ii.product_id = p.id
@@ -1129,7 +1129,7 @@ class ReportController {
                     c.name AS customer_name,
                     c.email AS customer_email,
                     c.phone AS customer_phone,
-                    COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+                    COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
                 FROM invoices i
                 INNER JOIN invoice_items ii ON i.id = ii.invoice_id
                 LEFT JOIN products p ON ii.product_id = p.id
@@ -1353,7 +1353,7 @@ class ReportController {
             // Cost of Sales - Based on product cost prices
             const [costOfSalesResult] = await db.execute(`
                 SELECT 
-                    COALESCE(SUM(ii.quantity * p.cost_price), 0) as cost_of_sales
+                    COALESCE(SUM(ii.quantity * CASE WHEN ii.cost_price > 0 THEN ii.cost_price ELSE p.cost_price END), 0) as cost_of_sales
                 FROM invoices i
                 INNER JOIN invoice_items ii ON i.id = ii.invoice_id
                 LEFT JOIN products p ON ii.product_id = p.id

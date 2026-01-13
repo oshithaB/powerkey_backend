@@ -177,7 +177,7 @@ const createEstimate = async (req, res) => {
       if (!item.quantity || item.quantity <= 0) {
         return res.status(400).json({ error: "Each item must have a valid quantity" });
       }
-      if (!item.unit_price || item.unit_price < 0) {
+      if ((item.unit_price === undefined || item.unit_price === null) || item.unit_price < 0) {
         return res.status(400).json({ error: "Each item must have a valid unit price" });
       }
       if (item.tax_rate < 0 || isNaN(item.tax_rate)) {
@@ -413,7 +413,7 @@ const editEstimate = async (req, res) => {
     if (!id) return res.status(400).json({ error: "Estimate ID is required" });
 
     // Validate required fields
-    if (!estimate_number || !company_id || !customer_id || !estimate_date || !subtotal || isNaN(subtotal)) {
+    if (!estimate_number || !company_id || !customer_id || !estimate_date || (subtotal === undefined || subtotal === null) || isNaN(subtotal)) {
       return res.status(400).json({ error: "Required fields are missing or invalid" });
     }
 
@@ -434,7 +434,7 @@ const editEstimate = async (req, res) => {
       if (!item.product_id || item.product_id === 0) return res.status(400).json({ error: "Each item must have a valid product ID" });
       if (!item.description) return res.status(400).json({ error: "Each item must have a description" });
       if (!item.quantity || item.quantity <= 0) return res.status(400).json({ error: "Each item must have a valid quantity" });
-      if (!item.unit_price || item.unit_price < 0) return res.status(400).json({ error: "Each item must have a valid unit price" });
+      if ((item.unit_price === undefined || item.unit_price === null) || item.unit_price < 0) return res.status(400).json({ error: "Each item must have a valid unit price" });
       if (item.tax_rate < 0 || item.tax_amount < 0 || item.total_price < 0) {
         return res.status(400).json({ error: "Tax rate, tax amount, and total price must be valid" });
       }
