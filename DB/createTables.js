@@ -753,23 +753,44 @@ async function createTables(db) {
     } catch (error) {
         console.error('Migration for invoice numbering failed:', error);
     }
-    // --- MIGRATION FOR COST PRICE ---
+    // --- UNIVERSAL SCHEMA FIX MIGRATIONS ---
     try {
-        console.log('Checking and updating products table for cost_price...');
-        const [prodColumns] = await db.execute("SHOW COLUMNS FROM products LIKE 'cost_price'");
-        if (prodColumns.length === 0) {
-            await db.execute("ALTER TABLE products ADD COLUMN cost_price DECIMAL(15,4) DEFAULT 0 AFTER unit_price");
-            console.log('products table updated: cost_price column added.');
+        console.log('Starting Universal Schema Fix Migrations...');
+
+        const migrations = [
+            { table: 'products', column: 'cost_price', definition: 'DECIMAL(15,4) DEFAULT 0 AFTER unit_price' },
+            { table: 'invoice_items', column: 'cost_price', definition: 'DECIMAL(15,4) DEFAULT 0 AFTER unit_price' },
+            { table: 'invoice_items', column: 'actual_unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0 AFTER cost_price' },
+            { table: 'estimate_items', column: 'actual_unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0 AFTER unit_price' }
+        ];
+
+        for (const m of migrations) {
+            const [columns] = await db.execute(`SHOW COLUMNS FROM ${m.table} LIKE '${m.column}'`);
+            if (columns.length === 0) {
+                console.log(`Migration: Adding ${m.column} to ${m.table}...`);
+                await db.execute(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.definition}`);
+                console.log(`Success: ${m.column} added to ${m.table}.`);
+            }
         }
 
-        console.log('Checking and updating invoice_items table for cost_price...');
-        const [invColumns] = await db.execute("SHOW COLUMNS FROM invoice_items LIKE 'cost_price'");
-        if (invColumns.length === 0) {
-            await db.execute("ALTER TABLE invoice_items ADD COLUMN cost_price DECIMAL(15,4) DEFAULT 0 AFTER unit_price");
-            console.log('invoice_items table updated: cost_price column added.');
+        // Precision updates for existing columns
+        const precisionUpdates = [
+            { table: 'invoice_items', column: 'unit_price', definition: 'DECIMAL(15,4) NOT NULL' },
+            { table: 'invoice_items', column: 'tax_rate', definition: 'DECIMAL(10,5) NOT NULL' },
+            { table: 'estimate_items', column: 'unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0.0000' },
+            { table: 'estimate_items', column: 'tax_rate', definition: 'DECIMAL(10,5) NOT NULL DEFAULT 0.00000' },
+            { table: 'bill_items', column: 'unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0.0000' },
+            { table: 'bill_items', column: 'quantity', definition: 'DECIMAL(10,2) NOT NULL DEFAULT 1.00' }
+        ];
+
+        for (const p of precisionUpdates) {
+            console.log(`Migration: Updating precision for ${p.table}.${p.column}...`);
+            await db.execute(`ALTER TABLE ${p.table} MODIFY COLUMN ${p.column} ${p.definition}`);
         }
+
+        console.log('Universal Schema Fix Migrations completed.');
     } catch (error) {
-        console.warn('Migration for cost_price warning:', error.message);
+        console.warn('Universal Schema Fix Migration warning:', error.message);
     }
 
     try {
