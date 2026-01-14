@@ -782,30 +782,12 @@ const updateInvoice = asyncHandler(async (req, res) => {
                       [qtyToRevert, invoiceItemStockDetails[i].order_item_id]
                     );
                     break;
+                    qtyToRevert = 0; // All reverted
+                    break;
                   }
                 }
               }
             }
-
-            console.log(`Invoice came here!`);
-
-            await connection.query(
-              `UPDATE invoice_items 
-              SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?, 
-                  tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
-              WHERE id = ?`,
-              [
-                item.quantity,
-                item.unit_price,
-                cost_price,
-                item.actual_unit_price,
-                item.tax_rate,
-                item.tax_amount,
-                item.total_price,
-                JSON.stringify(invoiceItemStockDetails || []),
-                item.id,
-              ]
-            );
 
             await connection.query(
               `UPDATE products 
@@ -816,8 +798,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
           }
 
           if (status === "opened" && invoice_type === "proforma") {
-            const [[{ quantity_on_hand, cost_price }]] = await connection.query(
-              "SELECT quantity_on_hand, cost_price FROM products WHERE id = ?",
+            const [[{ quantity_on_hand }]] = await connection.query(
+              "SELECT quantity_on_hand FROM products WHERE id = ?",
               [item.product_id]
             );
 
@@ -828,10 +810,6 @@ const updateInvoice = asyncHandler(async (req, res) => {
               });
             }
 
-            let invoiceItemStockDetails = oldItems[item.id].stock_detail
-              ? JSON.parse(oldItems[item.id].stock_detail)
-              : [];
-
             const [stockItems] = await connection.query(
               `SELECT * FROM order_items WHERE product_id = ? AND stock_status = 'in_stock' ORDER BY created_at ASC`,
               [item.product_id]
@@ -840,7 +818,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
             if (stockItems.length === 0) {
               await connection.rollback();
               return res.status(400).json({
-                error: `Not enough stock for product ${item.product_id}. Available: ${quantity_on_hand}, required: ${diff}`,
+                error: `Not enough stock for product ${item.product_id}. Available: ${quantity_on_hand}, required: ${item.quantity}`,
               });
             }
 
@@ -894,24 +872,6 @@ const updateInvoice = asyncHandler(async (req, res) => {
             }
 
             await connection.query(
-              `UPDATE invoice_items
-              SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?, 
-                  tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
-              WHERE id = ?`,
-              [
-                item.quantity,
-                item.unit_price,
-                cost_price,
-                item.actual_unit_price,
-                item.tax_rate,
-                item.tax_amount,
-                item.total_price,
-                JSON.stringify(invoiceItemStockDetails),
-                item.id,
-              ]
-            );
-
-            await connection.query(
               `UPDATE products 
             SET quantity_on_hand = quantity_on_hand - ? 
             WHERE id = ?`,
@@ -919,45 +879,48 @@ const updateInvoice = asyncHandler(async (req, res) => {
             );
           }
 
-          if (status === "proforma" && invoice_type === "proforma") {
-            const [[{ cost_price }]] = await connection.query(
-              "SELECT cost_price FROM products WHERE id = ?",
-              [item.product_id]
-            );
+          // --- UNIVERSAL ITEM UPDATE BLOCK ---
+          // Recalculate to ensure backend precision and correctness
+          const itemSubtotal = item.quantity * item.unit_price;
+          const calculatedActualUnitPrice = Number((item.unit_price / (1 + item.tax_rate / 100)).toFixed(4));
+          const calculatedTaxAmount = Number((calculatedActualUnitPrice * item.tax_rate / 100 * item.quantity).toFixed(2));
+          const calculatedTotalPrice = Number((itemSubtotal).toFixed(2));
 
-            let invoiceItemStockDetails = oldItems[item.id].stock_detail
-              ? JSON.parse(oldItems[item.id].stock_detail)
-              : [];
+          const [[{ cost_price }]] = await connection.query(
+            "SELECT cost_price FROM products WHERE id = ?",
+            [item.product_id]
+          );
 
-            await connection.query(
-              `UPDATE invoice_items
-              SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?,
-                  tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
-              WHERE id = ?`,
-              [
-                item.quantity,
-                item.unit_price,
-                cost_price,
-                item.actual_unit_price,
-                item.tax_rate,
-                item.tax_amount,
-                item.total_price,
-                JSON.stringify(invoiceItemStockDetails),
-                item.id,
-              ]
-            );
-          }
+          await connection.query(
+            `UPDATE invoice_items 
+            SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?, 
+                tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
+            WHERE id = ?`,
+            [
+              item.quantity,
+              item.unit_price,
+              cost_price,
+              calculatedActualUnitPrice,
+              item.tax_rate,
+              calculatedTaxAmount,
+              calculatedTotalPrice,
+              JSON.stringify(invoiceItemStockDetails || []),
+              item.id,
+            ]
+          );
 
           usedIds.add(item.id);
         } else if (!item.id) {
           // new items that are not in the DB
 
+          let invoiceItemStockDetails = [];
+
           if (
             (status === "opened" || status === "overdue") &&
             (invoice_type === "invoice" || invoice_type === "proforma")
           ) {
-            const [[{ quantity_on_hand, cost_price }]] = await connection.query(
-              "SELECT quantity_on_hand, cost_price FROM products WHERE id = ?",
+            const [[{ quantity_on_hand }]] = await connection.query(
+              "SELECT quantity_on_hand FROM products WHERE id = ?",
               [item.product_id]
             );
 
@@ -976,12 +939,11 @@ const updateInvoice = asyncHandler(async (req, res) => {
             if (stockItems.length === 0) {
               await connection.rollback();
               return res.status(400).json({
-                error: `Not enough stock for product ${item.product_id}. Available: ${quantity_on_hand}, required: ${diff}`,
+                error: `Not enough stock for product ${item.product_id}. Available: ${quantity_on_hand}, required: ${item.quantity}`,
               });
             }
 
             let itemQtyCopy = item.quantity;
-            let invoiceItemStockDetails = [];
 
             for (const stockItem of stockItems) {
               if (itemQtyCopy > stockItem.remaining_qty) {
@@ -1034,66 +996,46 @@ const updateInvoice = asyncHandler(async (req, res) => {
               }
             }
 
-            const [result] = await connection.query(
-              `INSERT INTO invoice_items 
-            (invoice_id, product_id, product_name, description, quantity, unit_price, cost_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                invoiceId,
-                item.product_id,
-                item.product_name || null,
-                item.description,
-                item.quantity,
-                item.unit_price,
-                cost_price,
-                item.actual_unit_price,
-                item.tax_rate,
-                item.tax_amount,
-                item.total_price,
-                JSON.stringify(invoiceItemStockDetails),
-              ]
-            );
-
             await connection.query(
               `UPDATE products 
             SET quantity_on_hand = quantity_on_hand - ? 
             WHERE id = ?`,
               [item.quantity, item.product_id]
             );
-
-            usedIds.add(result.insertId);
           }
 
-          if (status === "proforma" && invoice_type === "proforma") {
-            const [[{ cost_price }]] = await connection.query(
-              "SELECT cost_price FROM products WHERE id = ?",
-              [item.product_id]
-            );
+          // --- UNIVERSAL ITEM INSERT BLOCK ---
+          const itemSubtotal = item.quantity * item.unit_price;
+          const calculatedActualUnitPrice = Number((item.unit_price / (1 + item.tax_rate / 100)).toFixed(4));
+          const calculatedTaxAmount = Number((calculatedActualUnitPrice * item.tax_rate / 100 * item.quantity).toFixed(2));
+          const calculatedTotalPrice = Number((itemSubtotal).toFixed(2));
 
-            let invoiceItemStockDetails = [];
+          const [[{ cost_price }]] = await connection.query(
+            "SELECT cost_price FROM products WHERE id = ?",
+            [item.product_id]
+          );
 
-            const [result] = await connection.query(
-              `INSERT INTO invoice_items 
-            (invoice_id, product_id, product_name, description, quantity, unit_price, cost_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                invoiceId,
-                item.product_id,
-                item.product_name || null,
-                item.description,
-                item.quantity,
-                item.unit_price,
-                cost_price,
-                item.actual_unit_price,
-                item.tax_rate,
-                item.tax_amount,
-                item.total_price,
-                JSON.stringify(invoiceItemStockDetails),
-              ]
-            );
+          const [result] = await connection.query(
+            `INSERT INTO invoice_items 
+          (invoice_id, product_id, product_name, description, quantity, unit_price, cost_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              invoiceId,
+              item.product_id,
+              item.product_name || null,
+              item.description,
+              item.quantity,
+              item.unit_price,
+              cost_price,
+              calculatedActualUnitPrice,
+              item.tax_rate,
+              calculatedTaxAmount,
+              calculatedTotalPrice,
+              JSON.stringify(invoiceItemStockDetails || []),
+            ]
+          );
 
-            usedIds.add(result.insertId);
-          }
+          usedIds.add(result.insertId);
         }
       }
 
