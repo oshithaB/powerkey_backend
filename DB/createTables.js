@@ -753,6 +753,25 @@ async function createTables(db) {
     } catch (error) {
         console.error('Migration for invoice numbering failed:', error);
     }
+    // --- MIGRATION FOR COST PRICE ---
+    try {
+        console.log('Checking and updating products table for cost_price...');
+        const [prodColumns] = await db.execute("SHOW COLUMNS FROM products LIKE 'cost_price'");
+        if (prodColumns.length === 0) {
+            await db.execute("ALTER TABLE products ADD COLUMN cost_price DECIMAL(15,4) DEFAULT 0 AFTER unit_price");
+            console.log('products table updated: cost_price column added.');
+        }
+
+        console.log('Checking and updating invoice_items table for cost_price...');
+        const [invColumns] = await db.execute("SHOW COLUMNS FROM invoice_items LIKE 'cost_price'");
+        if (invColumns.length === 0) {
+            await db.execute("ALTER TABLE invoice_items ADD COLUMN cost_price DECIMAL(15,4) DEFAULT 0 AFTER unit_price");
+            console.log('invoice_items table updated: cost_price column added.');
+        }
+    } catch (error) {
+        console.warn('Migration for cost_price warning:', error.message);
+    }
+
     try {
         // Check existing roles
         const [existingRoles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff", "store_keeper")');

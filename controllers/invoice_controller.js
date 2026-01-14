@@ -640,8 +640,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
               console.log(`Quantity increased for item ID: ${item.id}, checking stock for additional ${diff} units`);
 
-              const [[{ quantity_on_hand }]] = await connection.query(
-                "SELECT quantity_on_hand FROM products WHERE id = ?",
+              const [[{ quantity_on_hand, cost_price }]] = await connection.query(
+                "SELECT quantity_on_hand, cost_price FROM products WHERE id = ?",
                 [item.product_id]
               );
 
@@ -791,12 +791,13 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
             await connection.query(
               `UPDATE invoice_items 
-              SET quantity = ?, unit_price = ?, actual_unit_price = ?, 
+              SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?, 
                   tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
               WHERE id = ?`,
               [
                 item.quantity,
                 item.unit_price,
+                cost_price,
                 item.actual_unit_price,
                 item.tax_rate,
                 item.tax_amount,
@@ -815,8 +816,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
           }
 
           if (status === "opened" && invoice_type === "proforma") {
-            const [[{ quantity_on_hand }]] = await connection.query(
-              "SELECT quantity_on_hand FROM products WHERE id = ?",
+            const [[{ quantity_on_hand, cost_price }]] = await connection.query(
+              "SELECT quantity_on_hand, cost_price FROM products WHERE id = ?",
               [item.product_id]
             );
 
@@ -894,12 +895,13 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
             await connection.query(
               `UPDATE invoice_items
-              SET quantity = ?, unit_price = ?, actual_unit_price = ?, 
+              SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?, 
                   tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
               WHERE id = ?`,
               [
                 item.quantity,
                 item.unit_price,
+                cost_price,
                 item.actual_unit_price,
                 item.tax_rate,
                 item.tax_amount,
@@ -918,18 +920,24 @@ const updateInvoice = asyncHandler(async (req, res) => {
           }
 
           if (status === "proforma" && invoice_type === "proforma") {
+            const [[{ cost_price }]] = await connection.query(
+              "SELECT cost_price FROM products WHERE id = ?",
+              [item.product_id]
+            );
+
             let invoiceItemStockDetails = oldItems[item.id].stock_detail
               ? JSON.parse(oldItems[item.id].stock_detail)
               : [];
 
             await connection.query(
               `UPDATE invoice_items
-              SET quantity = ?, unit_price = ?, actual_unit_price = ?,
+              SET quantity = ?, unit_price = ?, cost_price = ?, actual_unit_price = ?,
                   tax_rate = ?, tax_amount = ?, total_price = ?, stock_detail = ?
               WHERE id = ?`,
               [
                 item.quantity,
                 item.unit_price,
+                cost_price,
                 item.actual_unit_price,
                 item.tax_rate,
                 item.tax_amount,
@@ -948,8 +956,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
             (status === "opened" || status === "overdue") &&
             (invoice_type === "invoice" || invoice_type === "proforma")
           ) {
-            const [[{ quantity_on_hand }]] = await connection.query(
-              "SELECT quantity_on_hand FROM products WHERE id = ?",
+            const [[{ quantity_on_hand, cost_price }]] = await connection.query(
+              "SELECT quantity_on_hand, cost_price FROM products WHERE id = ?",
               [item.product_id]
             );
 
@@ -1028,8 +1036,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
             const [result] = await connection.query(
               `INSERT INTO invoice_items 
-            (invoice_id, product_id, product_name, description, quantity, unit_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (invoice_id, product_id, product_name, description, quantity, unit_price, cost_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 invoiceId,
                 item.product_id,
@@ -1037,6 +1045,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
                 item.description,
                 item.quantity,
                 item.unit_price,
+                cost_price,
                 item.actual_unit_price,
                 item.tax_rate,
                 item.tax_amount,
@@ -1056,12 +1065,17 @@ const updateInvoice = asyncHandler(async (req, res) => {
           }
 
           if (status === "proforma" && invoice_type === "proforma") {
+            const [[{ cost_price }]] = await connection.query(
+              "SELECT cost_price FROM products WHERE id = ?",
+              [item.product_id]
+            );
+
             let invoiceItemStockDetails = [];
 
             const [result] = await connection.query(
               `INSERT INTO invoice_items 
-            (invoice_id, product_id, product_name, description, quantity, unit_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (invoice_id, product_id, product_name, description, quantity, unit_price, cost_price, actual_unit_price, tax_rate, tax_amount, total_price, stock_detail) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 invoiceId,
                 item.product_id,
@@ -1069,6 +1083,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
                 item.description,
                 item.quantity,
                 item.unit_price,
+                cost_price,
                 item.actual_unit_price,
                 item.tax_rate,
                 item.tax_amount,
