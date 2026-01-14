@@ -370,6 +370,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
     discount_amount,
     shipping_cost,
     total_amount,
+    paid_amount,
     balance_due,
     items,
     status,
@@ -514,7 +515,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
       discount_amount: discount_amount || 0,
       shipping_cost: shipping_cost || 0,
       total_amount: total_amount || 0,
-      balance_due: balance_due || 0,
+      paid_amount: paid_amount || 0,
+      balance_due: (total_amount || 0) - (paid_amount || 0),
       status,
     };
 
@@ -1194,7 +1196,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
       discount_amount,
       shipping_cost,
       total_amount,
-      balance_due,
+      paid_amount,
+      balance_due: (total_amount || 0) - (paid_amount || 0),
       status,
       items,
     };
