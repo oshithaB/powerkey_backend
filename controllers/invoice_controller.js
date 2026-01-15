@@ -1345,7 +1345,8 @@ const getInvoices = async (req, res) => {
       await connection.beginTransaction();
 
       const query = `SELECT i.*, c.name AS customer_name, c.email AS customer_email, c.phone AS customer_phone, c.tax_number AS customer_tax_number, c.credit_limit AS customer_credit_limit,
-                     e.name AS employee_name
+                     e.name AS employee_name,
+                     (SELECT payment_method FROM payments WHERE invoice_id = i.id ORDER BY id DESC LIMIT 1) as payment_method
                      FROM invoices i
                      LEFT JOIN customer c ON i.customer_id = c.id
                      LEFT JOIN employees e ON i.employee_id = e.id
@@ -2295,6 +2296,144 @@ const getInvoiceRefunds = asyncHandler(async (req, res) => {
   }
 });
 
+// Get Invoice Payments
+const getInvoicePayments = asyncHandler(async (req, res) => {
+  const { company_id, invoiceId } = req.params;
+
+  if (!company_id || !invoiceId) {
+    return res.status(400).json({ error: "Company ID and Invoice ID are required" });
+  }
+
+  try {
+    const [payments] = await db.query(
+      `SELECT * FROM payments WHERE invoice_id = ? AND company_id = ? ORDER BY payment_date DESC`,
+      [invoiceId, company_id]
+    );
+
+    res.status(200).json(payments);
+  } catch (error) {
+    console.error('Error fetching invoice payments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update Payment
+const updatePayment = asyncHandler(async (req, res) => {
+  const { company_id, paymentId } = req.params;
+  const { payment_amount, payment_date, payment_method, deposit_to, notes } = req.body;
+
+  if (!company_id || !paymentId) {
+    return res.status(400).json({ error: "Company ID and Payment ID are required" });
+  }
+
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    // 1. Get Existing Payment
+    const [existingPaymentRows] = await connection.query(
+      `SELECT * FROM payments WHERE id = ? AND company_id = ? FOR UPDATE`,
+      [paymentId, company_id]
+    );
+
+    if (existingPaymentRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    const existingPayment = existingPaymentRows[0];
+    const invoiceId = existingPayment.invoice_id;
+    const customerId = existingPayment.customer_id;
+    const oldAmount = Number(existingPayment.payment_amount);
+    const newAmount = Number(payment_amount);
+
+    // 2. Validate New Amount
+    if (isNaN(newAmount) || newAmount < 0) {
+      await connection.rollback();
+      return res.status(400).json({ error: "Invalid payment amount" });
+    }
+
+    const amountDiff = newAmount - oldAmount;
+
+    // 3. Update Payment Record
+    await connection.query(
+      `UPDATE payments 
+       SET payment_amount = ?, payment_date = ?, payment_method = ?, deposit_to = ?, notes = ?
+       WHERE id = ?`,
+      [newAmount, payment_date, payment_method, deposit_to, notes, paymentId]
+    );
+
+    // 4. Update Invoice Totals
+    if (amountDiff !== 0) {
+      const [invoiceRows] = await connection.query(
+        `SELECT total_amount, paid_amount, status, due_date FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE`,
+        [invoiceId, company_id]
+      );
+
+      if (invoiceRows.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const invoice = invoiceRows[0];
+      const currentPaid = Number(invoice.paid_amount);
+      const totalAmount = Number(invoice.total_amount);
+
+      const newPaidAmount = currentPaid + amountDiff;
+      const newBalanceDue = totalAmount - newPaidAmount;
+
+      let newStatus = invoice.status;
+      if (invoice.status !== 'proforma' && invoice.status !== 'cancelled') {
+        if (newBalanceDue <= 0.01) { // Floating point tolerance
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partially_paid';
+        } else {
+          // If paid amount is 0, check if it should be opened or overdue
+          const currentDate = new Date();
+          const dueDate = new Date(invoice.due_date);
+          if (dueDate < currentDate) {
+            newStatus = 'overdue';
+          } else {
+            newStatus = 'opened';
+          }
+        }
+      }
+
+      await connection.query(
+        `UPDATE invoices 
+         SET paid_amount = ?, balance_due = ?, status = ?, updated_at = ?
+         WHERE id = ?`,
+        [newPaidAmount, newBalanceDue, newStatus, new Date(), invoiceId]
+      );
+
+      // 5. Update Customer Balance
+      // Logic: Balance = TotalInvoices - TotalPayments. 
+      // Diff = NewPayment - OldPayment.
+      // If we pay more (Diff > 0), Balance should DECREASE.
+      // current_balance = current_balance - Diff.
+
+      await connection.query(
+        `UPDATE customer 
+         SET current_balance = current_balance - ?
+         WHERE id = ? AND company_id = ?`,
+        [amountDiff, customerId, company_id]
+      );
+    }
+
+    await connection.commit();
+    res.status(200).json({ message: "Payment updated successfully" });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error updating payment:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 module.exports = {
   createInvoice,
   updateInvoice,
@@ -2309,5 +2448,7 @@ module.exports = {
   checkCustomerEligibility,
   cancelInvoice,
   processRefund,
-  getInvoiceRefunds
+  getInvoiceRefunds,
+  getInvoicePayments,
+  updatePayment
 };

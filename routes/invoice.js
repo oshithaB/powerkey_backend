@@ -18,7 +18,9 @@ const {
   checkCustomerEligibility,
   cancelInvoice,
   processRefund,
-  getInvoiceRefunds
+  getInvoiceRefunds,
+  getInvoicePayments,
+  updatePayment
 } = require('../controllers/invoice_controller');
 
 // Configure multer for file uploads
@@ -144,6 +146,20 @@ router.get(
   verifyToken,
   authorizedRoles(['admin', 'sale', 'staff']),
   getInvoiceRefunds
+);
+
+router.get(
+  '/getInvoicePayments/:company_id/:invoiceId',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getInvoicePayments
+);
+
+router.put(
+  '/updatePayment/:company_id/:paymentId',
+  verifyToken,
+  authorizedRoles(['admin', 'staff']), // Limit update to admin/staff
+  updatePayment
 );
 
 module.exports = router;
