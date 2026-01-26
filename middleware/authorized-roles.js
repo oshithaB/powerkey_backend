@@ -9,7 +9,11 @@ const authorizedRoles = (roles) => {
     // Convert roles to array if it's a string
     const allowedRoles = Array.isArray(roles) ? roles : [roles];
 
-    if (allowedRoles.includes(req.role)) {
+    // Case-insensitive comparison
+    const userRole = req.role.toLowerCase();
+    const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
+
+    if (normalizedAllowedRoles.includes(userRole)) {
       // console.log(`User ID: ${req.userId}, Role: ${req.role} - Access granted`);
       return next();
     } else {

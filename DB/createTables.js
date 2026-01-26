@@ -798,125 +798,173 @@ async function createTables(db) {
         const [existingRoles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff", "store_keeper")');
         console.log(`Found ${existingRoles.length} roles:`, existingRoles);
 
-        const roleMap = existingRoles.reduce((map, role) => {
-            map[role.name] = role.role_id;
-            return map;
-        }, {});
+        if (existingRoles.length < 4) {
+            // ... (rest of role creation logic)
 
-        // Define expected roles
-        const expectedRoles = ['admin', 'sale', 'staff', 'store_keeper'];
-        const missingRoles = expectedRoles.filter(role => !roleMap[role]);
 
-        if (missingRoles.length > 0) {
-            console.log(`Missing roles: ${missingRoles.join(', ')}. Inserting...`);
+            const roleMap = existingRoles.reduce((map, role) => {
+                map[role.name] = role.role_id;
+                return map;
+            }, {});
+
+            // Define expected roles
+            const expectedRoles = ['admin', 'sale', 'staff', 'store_keeper'];
+            const missingRoles = expectedRoles.filter(role => !roleMap[role]);
+
+            if (missingRoles.length > 0) {
+                console.log(`Missing roles: ${missingRoles.join(', ')}. Inserting...`);
+                await db.beginTransaction();
+                try {
+                    // Insert missing roles
+                    const placeholders = missingRoles.map(() => '(?)').join(', ');
+                    const [roleResult] = await db.execute(
+                        `INSERT INTO role (name) VALUES ${placeholders}`,
+                        missingRoles
+                    );
+                    console.log(`Inserted ${roleResult.affectedRows} roles`);
+
+                    // Refresh role map with newly inserted roles
+                    const [roles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff")');
+                    console.log('Fetched roles:', roles);
+
+                    if (roles.length !== 3) {
+                        throw new Error(`Expected 3 roles, but found ${roles.length}`);
+                    }
+
+                    roles.forEach(role => {
+                        roleMap[role.name] = role.role_id;
+                    });
+                    console.log('Updated role map:', roleMap);
+
+                    // Commit role insertion
+                    await db.commit();
+                } catch (error) {
+                    await db.rollback();
+                    console.error('Error inserting roles, transaction rolled back:', error);
+                    throw error;
+                }
+            } else {
+                console.log('All required roles (admin, sale, staff) already exist');
+            }
+
+            // Check if users exist
+            const [existingUsers] = await db.execute('SELECT COUNT(*) as count FROM user');
+            console.log(`User count in database: ${existingUsers[0].count}`);
+
+            // Insert users regardless of existing users to ensure insertion
+            console.log('Inserting default users...');
             await db.beginTransaction();
             try {
-                // Insert missing roles
-                const placeholders = missingRoles.map(() => '(?)').join(', ');
-                const [roleResult] = await db.execute(
-                    `INSERT INTO role (name) VALUES ${placeholders}`,
-                    missingRoles
-                );
-                console.log(`Inserted ${roleResult.affectedRows} roles`);
+                const users = [
+                    {
+                        role_id: roleMap['admin'],
+                        full_name: 'Aruna Kaldera',
+                        username: 'Ansk02',
+                        email: 'aruna.kaldera@example.com',
+                        password: 'aK@123456'
+                    },
+                    {
+                        role_id: roleMap['admin'],
+                        full_name: 'Ramitha Heshan',
+                        username: 'ramitha33',
+                        email: 'ramithacampus@gmail.com',
+                        password: 'test69'
+                    },
+                    {
+                        role_id: roleMap['sale'],
+                        full_name: 'Nimal Perera',
+                        username: 'nimalP',
+                        email: 'nimal.sales@example.com',
+                        password: 'nP@123456'
+                    },
+                    {
+                        role_id: roleMap['staff'],
+                        full_name: 'Suneth Silva',
+                        username: 'sunethS',
+                        email: 'suneth.staff@example.com',
+                        password: 'sS@789123'
+                    }
+                ];
 
-                // Refresh role map with newly inserted roles
-                const [roles] = await db.execute('SELECT role_id, name FROM role WHERE name IN ("admin", "sale", "staff")');
-                console.log('Fetched roles:', roles);
-
-                if (roles.length !== 3) {
-                    throw new Error(`Expected 3 roles, but found ${roles.length}`);
+                for (const user of users) {
+                    if (!user.role_id) {
+                        console.error(`Role ID for ${user.full_name} not found, skipping user insertion`);
+                        continue;
+                    }
+                    // Check if user already exists by email or username
+                    const [existingUser] = await db.execute(
+                        'SELECT COUNT(*) as count FROM user WHERE email = ? OR username = ?',
+                        [user.email, user.username]
+                    );
+                    if (existingUser[0].count > 0) {
+                        console.log(`User with email ${user.email} or username ${user.username} already exists, skipping`);
+                        continue;
+                    }
+                    const passwordHash = await bcrypt.hash(user.password, 10);
+                    const [userResult] = await db.execute(
+                        `INSERT INTO user (role_id, full_name, username, email, password_hash)
+                    VALUES (?, ?, ?, ?, ?)`,
+                        [user.role_id, user.full_name, user.username, user.email, passwordHash]
+                    );
+                    console.log(`Inserted user: ${user.email} (Role ID: ${user.role_id}, Affected Rows: ${userResult.affectedRows})`);
                 }
 
-                roles.forEach(role => {
-                    roleMap[role.name] = role.role_id;
-                });
-                console.log('Updated role map:', roleMap);
-
-                // Commit role insertion
+                // Commit user insertion
                 await db.commit();
+                console.log('User insertion transaction committed successfully');
             } catch (error) {
                 await db.rollback();
-                console.error('Error inserting roles, transaction rolled back:', error);
+                console.error('Error inserting users, transaction rolled back:', error);
                 throw error;
             }
-        } else {
-            console.log('All required roles (admin, sale, staff) already exist');
-        }
-
-        // Check if users exist
-        const [existingUsers] = await db.execute('SELECT COUNT(*) as count FROM user');
-        console.log(`User count in database: ${existingUsers[0].count}`);
-
-        // Insert users regardless of existing users to ensure insertion
-        console.log('Inserting default users...');
-        await db.beginTransaction();
-        try {
-            const users = [
-                {
-                    role_id: roleMap['admin'],
-                    full_name: 'Aruna Kaldera',
-                    username: 'Ansk02',
-                    email: 'aruna.kaldera@example.com',
-                    password: 'aK@123456'
-                },
-                {
-                    role_id: roleMap['admin'],
-                    full_name: 'Ramitha Heshan',
-                    username: 'ramitha33',
-                    email: 'ramithacampus@gmail.com',
-                    password: 'test69'
-                },
-                {
-                    role_id: roleMap['sale'],
-                    full_name: 'Nimal Perera',
-                    username: 'nimalP',
-                    email: 'nimal.sales@example.com',
-                    password: 'nP@123456'
-                },
-                {
-                    role_id: roleMap['staff'],
-                    full_name: 'Suneth Silva',
-                    username: 'sunethS',
-                    email: 'suneth.staff@example.com',
-                    password: 'sS@789123'
-                }
-            ];
-
-            for (const user of users) {
-                if (!user.role_id) {
-                    console.error(`Role ID for ${user.full_name} not found, skipping user insertion`);
-                    continue;
-                }
-                // Check if user already exists by email or username
-                const [existingUser] = await db.execute(
-                    'SELECT COUNT(*) as count FROM user WHERE email = ? OR username = ?',
-                    [user.email, user.username]
-                );
-                if (existingUser[0].count > 0) {
-                    console.log(`User with email ${user.email} or username ${user.username} already exists, skipping`);
-                    continue;
-                }
-                const passwordHash = await bcrypt.hash(user.password, 10);
-                const [userResult] = await db.execute(
-                    `INSERT INTO user (role_id, full_name, username, email, password_hash)
-                    VALUES (?, ?, ?, ?, ?)`,
-                    [user.role_id, user.full_name, user.username, user.email, passwordHash]
-                );
-                console.log(`Inserted user: ${user.email} (Role ID: ${user.role_id}, Affected Rows: ${userResult.affectedRows})`);
-            }
-
-            // Commit user insertion
-            await db.commit();
-            console.log('User insertion transaction committed successfully');
-        } catch (error) {
-            await db.rollback();
-            console.error('Error inserting users, transaction rolled back:', error);
-            throw error;
         }
     } catch (error) {
-        console.error('Error in role/user insertion block:', error.message, error.stack);
+        console.error('Error seeding roles:', error);
     }
 
+    // --- MIGRATION FOR PURCHASE ORDER TAX/DISCOUNT ---
+    try {
+        console.log('Checking and updating orders table for tax/discount fields...');
+
+        // fields to add to 'orders'
+        const orderFields = [
+            { name: 'subtotal', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+            { name: 'tax_amount', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+            { name: 'discount_type', def: "ENUM('percentage', 'fixed') DEFAULT 'fixed'" },
+            { name: 'discount_value', def: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { name: 'discount_amount', def: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { name: 'shipping_cost', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+            { name: 'notes', def: 'TEXT' },
+            { name: 'terms', def: 'TEXT' }
+        ];
+
+        for (const field of orderFields) {
+            const [columns] = await db.execute(`SHOW COLUMNS FROM orders LIKE '${field.name}'`);
+            if (columns.length === 0) {
+                await db.execute(`ALTER TABLE orders ADD COLUMN ${field.name} ${field.def}`);
+                console.log(`orders table: added ${field.name}`);
+            }
+        }
+
+        // fields to add to 'order_items'
+        const itemFields = [
+            { name: 'tax_rate', def: 'DECIMAL(10,5) DEFAULT 0.00000' },
+            { name: 'tax_amount', def: 'DECIMAL(15,2) DEFAULT 0.00' }
+        ];
+
+        for (const field of itemFields) {
+            const [columns] = await db.execute(`SHOW COLUMNS FROM order_items LIKE '${field.name}'`);
+            if (columns.length === 0) {
+                await db.execute(`ALTER TABLE order_items ADD COLUMN ${field.name} ${field.def}`);
+                console.log(`order_items table: added ${field.name}`);
+            }
+        }
+
+        console.log('Purchase Order Tax/Discount migration completed.');
+
+    } catch (error) {
+        console.warn('Migration for PO Tax/Discount warning:', error.message);
+    }
 }
 
 module.exports = createTables;

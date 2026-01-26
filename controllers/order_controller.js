@@ -5,11 +5,16 @@ const getOrders = async (req, res) => {
     const { companyId } = req.params;
     try {
         const [orders] = await db.execute(
-            `SELECT o.id, v.name AS supplier, o.vendor_id, o.order_no, o.order_date, o.category_name AS category, o.class, o.location, o.total_amount, o.status, o.created_at, o.mailling_address, o.email, o.customer_id, o.shipping_address, o.ship_via, e.name AS employee_name
+            `SELECT o.id, v.name AS supplier, o.vendor_id, o.order_no, o.order_date, o.category_name AS category, o.class, o.location, o.total_amount, 
+             o.subtotal, o.tax_amount, o.discount_type, o.discount_value, o.discount_amount, o.shipping_cost, o.notes, o.terms,
+             o.status, o.created_at, o.mailling_address, o.email, o.customer_id, o.shipping_address, o.ship_via, e.name AS employee_name
              FROM orders o
              LEFT JOIN employees e ON o.class = e.id
              LEFT JOIN vendor v ON o.vendor_id = v.vendor_id
              WHERE o.company_id = ?
+             AND o.order_no NOT LIKE 'BILL-STK%' 
+             AND o.order_no NOT LIKE 'OPENING-STK%' 
+             AND o.order_no NOT LIKE 'ADJ-IN%'
              ORDER BY o.created_at DESC`,
             [companyId]
         );
@@ -25,7 +30,9 @@ const getOrder = async (req, res) => {
     const { companyId, orderId } = req.params;
     try {
         const [order] = await db.execute(
-            `SELECT o.id, v.name AS supplier, o.order_no, o.order_date, o.category_name AS category, o.class, o.location, o.total_amount, o.status, o.created_at, o.mailling_address, o.email, o.customer_id, o.shipping_address, o.ship_via, e.name AS employee_name, o.vendor_id
+            `SELECT o.id, v.name AS supplier, o.order_no, o.order_date, o.category_name AS category, o.class, o.location, o.total_amount, 
+             o.subtotal, o.tax_amount, o.discount_type, o.discount_value, o.discount_amount, o.shipping_cost, o.notes, o.terms,
+             o.status, o.created_at, o.mailling_address, o.email, o.customer_id, o.shipping_address, o.ship_via, e.name AS employee_name, o.vendor_id
          FROM orders o
          LEFT JOIN employees e ON o.class = e.id
          LEFT JOIN vendor v ON o.vendor_id = v.vendor_id
@@ -47,7 +54,7 @@ const getOrderItems = async (req, res) => {
     const { companyId } = req.params;
     try {
         const [orderItems] = await db.execute(
-            `SELECT oi.id, oi.order_id, oi.product_id, oi.name, oi.sku, oi.description, oi.qty, oi.rate, oi.amount, oi.class, oi.received, oi.closed, oi.created_at
+            `SELECT oi.id, oi.order_id, oi.product_id, oi.name, oi.sku, oi.description, oi.qty, oi.rate, oi.amount, oi.class, oi.received, oi.closed, oi.tax_rate, oi.tax_amount, oi.created_at
              FROM order_items oi
              JOIN orders o ON oi.order_id = o.id
              WHERE o.company_id = ?`,
@@ -73,7 +80,7 @@ const getOrderItemsByOrder = async (req, res) => {
         }
 
         const [orderItems] = await db.execute(
-            `SELECT oi.id, oi.order_id, oi.product_id, oi.name, oi.sku, oi.description, oi.qty, oi.rate, oi.amount, oi.class, oi.received, oi.closed, oi.created_at
+            `SELECT oi.id, oi.order_id, oi.product_id, oi.name, oi.sku, oi.description, oi.qty, oi.rate, oi.amount, oi.class, oi.received, oi.closed, oi.tax_rate, oi.tax_amount, oi.created_at
              FROM order_items oi
              WHERE oi.order_id = ?`,
             [orderId]
@@ -105,7 +112,9 @@ const createOrder = async (req, res) => {
     const { companyId } = req.params;
     const {
         vendor_id, mailling_address, email, customer_id, shipping_address, order_no, order_date,
-        category, class: orderClass, location, ship_via, total_amount, status
+        category, class: orderClass, location, ship_via,
+        subtotal, tax_amount, discount_type, discount_value, discount_amount, shipping_cost, notes, terms,
+        total_amount, status
     } = req.body;
 
     const connection = await db.getConnection();
@@ -116,8 +125,10 @@ const createOrder = async (req, res) => {
         const [result] = await connection.execute(
             `INSERT INTO orders (
                 company_id, vendor_id, mailling_address, email, customer_id, shipping_address,
-                order_no, order_date, category_name, class, location, ship_via, total_amount, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                order_no, order_date, category_name, class, location, ship_via, 
+                subtotal, tax_amount, discount_type, discount_value, discount_amount, shipping_cost, notes, terms,
+                total_amount, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 companyId,
                 vendor_id || null,
@@ -131,6 +142,14 @@ const createOrder = async (req, res) => {
                 orderClass || null,
                 location || null,
                 ship_via || null,
+                subtotal || 0,
+                tax_amount || 0,
+                discount_type || 'fixed',
+                discount_value || 0,
+                discount_amount || 0,
+                shipping_cost || 0,
+                notes || null,
+                terms || null,
                 total_amount || 0,
                 status || 'open'
             ]
@@ -162,7 +181,9 @@ const updateOrder = async (req, res) => {
     const { companyId, orderId } = req.params;
     const {
         vendor_id, mailling_address, email, customer_id, shipping_address, order_no, order_date,
-        category, class: orderClass, location, ship_via, total_amount, status, items
+        category, class: orderClass, location, ship_via,
+        subtotal, tax_amount, discount_type, discount_value, discount_amount, shipping_cost, notes, terms,
+        total_amount, status, items
     } = req.body;
 
     const connection = await db.getConnection();
@@ -189,6 +210,7 @@ const updateOrder = async (req, res) => {
             `UPDATE orders SET
                 vendor_id = ?, mailling_address = ?, email = ?, customer_id = ?, shipping_address = ?,
                 order_no = ?, order_date = ?, category_name = ?, class = ?, location = ?, ship_via = ?,
+                subtotal = ?, tax_amount = ?, discount_type = ?, discount_value = ?, discount_amount = ?, shipping_cost = ?, notes = ?, terms = ?,
                 total_amount = ?, status = ?
              WHERE id = ? AND company_id = ?`,
             [
@@ -203,6 +225,14 @@ const updateOrder = async (req, res) => {
                 orderClass || null,
                 location || null,
                 ship_via || null,
+                subtotal || 0,
+                tax_amount || 0,
+                discount_type || 'fixed',
+                discount_value || 0,
+                discount_amount || 0,
+                shipping_cost || 0,
+                notes || null,
+                terms || null,
                 total_amount || 0,
                 status || 'open',
                 orderId,
@@ -218,12 +248,12 @@ const updateOrder = async (req, res) => {
         if (Array.isArray(items) && items.length > 0) {
             const insertPromises = items.map(item => {
                 const {
-                    product_id, name, sku, description, qty, rate, amount, class: itemClass, received, closed
+                    product_id, name, sku, description, qty, rate, amount, class: itemClass, received, closed, tax_rate, tax_amount
                 } = item;
                 return connection.execute(
                     `INSERT INTO order_items (
-                        order_id, product_id, name, sku, description, qty, rate, amount, class, received, closed
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        order_id, product_id, name, sku, description, qty, rate, amount, class, received, closed, tax_rate, tax_amount
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         orderId,
                         product_id || null,
@@ -235,7 +265,9 @@ const updateOrder = async (req, res) => {
                         amount || 0,
                         itemClass || null,
                         received || false,
-                        closed || false
+                        closed || false,
+                        tax_rate || 0,
+                        tax_amount || 0
                     ]
                 );
             });
@@ -289,7 +321,7 @@ const updateOrder = async (req, res) => {
 // Create a new order item
 const createOrderItem = async (req, res) => {
     const { companyId } = req.params;
-    const { order_id, product_id, name, sku, description, qty, rate, amount, class: itemClass, received, closed } = req.body;
+    const { order_id, product_id, name, sku, description, qty, rate, amount, class: itemClass, received, closed, tax_rate, tax_amount } = req.body;
 
     try {
         const [order] = await db.execute(
@@ -302,8 +334,8 @@ const createOrderItem = async (req, res) => {
 
         const [result] = await db.execute(
             `INSERT INTO order_items (
-                order_id, product_id, name, sku, description, qty, rate, amount, class, received, closed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                order_id, product_id, name, sku, description, qty, rate, amount, class, received, closed, tax_rate, tax_amount
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 order_id,
                 product_id || null,
@@ -315,7 +347,9 @@ const createOrderItem = async (req, res) => {
                 amount || 0,
                 itemClass || null,
                 received || false,
-                closed || false
+                closed || false,
+                tax_rate || 0,
+                tax_amount || 0
             ]
         );
         res.json({ id: result.insertId, message: 'Order item created successfully' });
