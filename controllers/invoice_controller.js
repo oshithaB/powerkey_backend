@@ -630,13 +630,16 @@ const updateInvoice = asyncHandler(async (req, res) => {
           const oldQty = oldItems[item.id].qty;
           const diff = item.quantity - oldQty;
 
+          let rawStockDetail = oldItems[item.id].stock_detail;
+          let invoiceItemStockDetails = typeof rawStockDetail === 'string'
+            ? JSON.parse(rawStockDetail || '[]')
+            : (rawStockDetail || []);
+
           if ((status === "opened" || status === "overdue") && invoice_type === "invoice") {
 
             console.log(`Inside status opened/overdue and type invoice for item ID: ${item.id}, diff: ${diff}`);
 
             console.log(oldItems[item.id]);
-
-            let invoiceItemStockDetails = oldItems[item.id].stock_detail;
 
             if (diff > 0) {
 
@@ -888,10 +891,17 @@ const updateInvoice = asyncHandler(async (req, res) => {
           const calculatedTaxAmount = Number((calculatedActualUnitPrice * item.tax_rate / 100 * item.quantity).toFixed(2));
           const calculatedTotalPrice = Number((itemSubtotal).toFixed(2));
 
-          const [[{ cost_price }]] = await connection.query(
+          const [productRows] = await connection.query(
             "SELECT cost_price FROM products WHERE id = ?",
             [item.product_id]
           );
+
+          if (productRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ error: `Product not found (ID: ${item.product_id})` });
+          }
+
+          const { cost_price } = productRows[0];
 
           await connection.query(
             `UPDATE invoice_items 
