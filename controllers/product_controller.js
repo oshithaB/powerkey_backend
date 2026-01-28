@@ -675,6 +675,144 @@ const getEmployees = async (req, res) => {
     }
 };
 
+const adjustStock = async (req, res) => {
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const { company_id, product_id } = req.params;
+        const { new_quantity, reason } = req.body;
+
+        if (!company_id || !product_id) {
+            return res.status(400).json({ success: false, message: 'Company ID and Product ID are required' });
+        }
+
+        if (new_quantity === undefined || new_quantity === null || isNaN(new_quantity)) {
+            return res.status(400).json({ success: false, message: 'New quantity is required and must be a number' });
+        }
+
+        // Lock product row
+        const [productRows] = await connection.query(
+            'SELECT * FROM products WHERE id = ? AND company_id = ? FOR UPDATE',
+            [product_id, company_id]
+        );
+
+        if (productRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Product not found' });
+        }
+
+        const existingProduct = productRows[0];
+        const currentQty = parseInt(existingProduct.quantity_on_hand || 0);
+        const targetQty = parseInt(new_quantity);
+        const diff = targetQty - currentQty;
+
+        if (diff === 0) {
+            await connection.rollback();
+            return res.json({ success: true, message: 'No change in quantity' });
+        }
+
+        // Update Product Quantity
+        await connection.query(
+            'UPDATE products SET quantity_on_hand = ? WHERE id = ?',
+            [targetQty, product_id]
+        );
+
+        // Record in Inventory Adjustments
+        await connection.query(
+            `INSERT INTO inventory_adjustments (
+                company_id, product_id, previous_quantity, new_quantity, adjustment_quantity, reason
+            ) VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+                company_id,
+                product_id,
+                currentQty,
+                targetQty,
+                diff,
+                reason || 'Manual Adjustment' // Explicitly marks this type
+            ]
+        );
+
+        // Update Order Items (FIFO Logic)
+        if (diff > 0) {
+            // Surplus: Create dummy "Stock Adjustment" order
+            const orderNo = `ADJ-MANUAL-${product_id}-${Date.now()}`;
+            const currentDate = new Date().toISOString().split('T')[0];
+
+            const [orderResult] = await connection.query(
+                `INSERT INTO orders (
+                    company_id, vendor_id, order_no, order_date, 
+                    total_amount, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                [company_id, null, orderNo, currentDate, 0, 'closed']
+            );
+
+            await connection.query(
+                `INSERT INTO order_items (
+                    order_id, product_id, name, sku, description, 
+                    qty, rate, amount, 
+                    received, closed, remaining_qty, stock_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    orderResult.insertId,
+                    product_id,
+                    existingProduct.name,
+                    existingProduct.sku,
+                    'Manual Stock Adjustment - Surplus',
+                    diff,
+                    existingProduct.cost_price, // Use current cost price
+                    0,
+                    true,
+                    true,
+                    diff,
+                    'in_stock'
+                ]
+            );
+        } else {
+            // Shrinkage/Reduction: Reduce from existing batches
+            let qtyToReduce = Math.abs(diff);
+
+            const [availableBatches] = await connection.query(
+                `SELECT id, remaining_qty FROM order_items 
+                 WHERE product_id = ? AND stock_status = 'in_stock' 
+                 ORDER BY created_at ASC`,
+                [product_id]
+            );
+
+            for (const batch of availableBatches) {
+                if (qtyToReduce <= 0) break;
+
+                if (batch.remaining_qty > qtyToReduce) {
+                    await connection.query(
+                        `UPDATE order_items SET remaining_qty = remaining_qty - ? WHERE id = ?`,
+                        [qtyToReduce, batch.id]
+                    );
+                    qtyToReduce = 0;
+                } else {
+                    qtyToReduce -= batch.remaining_qty;
+                    await connection.query(
+                        `UPDATE order_items SET remaining_qty = 0, stock_status = 'out_of_stock' WHERE id = ?`,
+                        [batch.id]
+                    );
+                }
+            }
+
+            // If qtyToReduce > 0, it means we reduced more than we had traversing batches.
+            // We accept this since we updated the main product quantity anyway.
+        }
+
+        await connection.commit();
+        res.status(200).json({ success: true, message: 'Stock adjusted successfully' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error adjusting stock:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    } finally {
+        connection.release();
+    }
+};
+
 module.exports = {
     getProducts,
     createProduct,
@@ -682,5 +820,6 @@ module.exports = {
     deleteProduct,
     getCategories,
     getVendors,
-    getEmployees
+    getEmployees,
+    adjustStock
 };
