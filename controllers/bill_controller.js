@@ -312,6 +312,7 @@ const updateBill = async (req, res) => {
   const { company_id, bill_id } = req.params;
 
   console.log("Received updateBill request for company_id:", company_id, "bill_id:", bill_id);
+  console.log("Updating bill with data:", req.body);
 
   const {
     vendor_id,
@@ -320,18 +321,40 @@ const updateBill = async (req, res) => {
     employee_id,
     due_date,
     notes,
-    total_amount, // We will recalculate this to be safe
     items,
   } = req.body;
-
-  console.log("Updating bill with data:", req.body);
 
   const conn = await db.getConnection();
   await conn.beginTransaction();
 
   try {
-    // UPDATED LOGIC: Recalculate total_amount from items (Tax Exclusive Logic)
-    // Map items to calculate their totals first
+    // 1. Fetch Existing Bill & Items
+    const [existingBill] = await conn.query(
+      `SELECT * FROM bills WHERE id = ? AND company_id = ?`,
+      [bill_id, company_id]
+    );
+
+    if (existingBill.length === 0) {
+      throw new Error("Bill not found");
+    }
+
+    const currentBill = existingBill[0];
+    const [existingItems] = await conn.query(
+      `SELECT * FROM bill_items WHERE bill_id = ?`,
+      [bill_id]
+    );
+
+    // 2. Revert Stock for Existing Items (Decrease Stock)
+    for (const item of existingItems) {
+      if (item.product_id) {
+        await conn.execute(
+          'UPDATE products SET quantity_on_hand = quantity_on_hand - ? WHERE id = ? AND company_id = ?',
+          [Number(item.quantity) || 0, item.product_id, company_id]
+        );
+      }
+    }
+
+    // 3. Recalculate New Totals from Incoming Items
     const recalculatedItems = items.map(item => {
       const quantity = Number(item.quantity) || 0;
       const costPrice = Number(item.cost_price) || Number(item.unit_price) || 0;
@@ -345,16 +368,31 @@ const updateBill = async (req, res) => {
       return {
         ...item,
         actual_unit_price: actualUnitPrice,
-        unit_price: actualUnitPrice, // Store cost_price as unit_price
+        unit_price: actualUnitPrice,
         tax_amount: taxAmount,
         total_price: totalPrice
       };
     });
 
     const calculatedTotal = Number(recalculatedItems.reduce((sum, item) => sum + Number(item.total_price || 0), 0).toFixed(2));
-    console.log("Recalculated total for update:", calculatedTotal);
 
-    // Update Bill - ensure all undefined values are converted to null
+    // 4. Calculate New Balance Due
+    const existingPaidAmount = Number(currentBill.paid_amount) || 0;
+    const newBalanceDue = Number((calculatedTotal - existingPaidAmount).toFixed(2));
+
+    // Determine status based on new totals
+    let newStatus = currentBill.status;
+    if (newStatus !== 'proforma' && newStatus !== 'cancelled') {
+      if (newBalanceDue <= 0 && calculatedTotal > 0) {
+        newStatus = 'paid';
+      } else if (existingPaidAmount > 0 && existingPaidAmount < calculatedTotal) {
+        newStatus = 'partially_paid';
+      } else {
+        newStatus = 'opened';
+      }
+    }
+
+    // 5. Update Bill Record
     const updateParams = [
       order_id || null,
       vendor_id || null,
@@ -362,19 +400,21 @@ const updateBill = async (req, res) => {
       due_date || null,
       payment_method_id || null,
       notes || null,
-      calculatedTotal, // Use calculated total instead of req.body.total_amount
+      calculatedTotal,
+      newBalanceDue,
+      newStatus,
       bill_id,
       company_id,
     ];
 
     await conn.execute(
       `UPDATE bills 
-       SET order_id=?, vendor_id=?, employee_id=?, due_date=?, payment_method_id=?, notes=?, total_amount=?
+       SET order_id=?, vendor_id=?, employee_id=?, due_date=?, payment_method_id=?, notes=?, total_amount=?, balance_due=?, status=?
        WHERE id=? AND company_id=?`,
       updateParams
     );
 
-    // Replace Items
+    // 6. Replace Items (Delete Old -> Insert New)
     await conn.execute(`DELETE FROM bill_items WHERE bill_id=?`, [bill_id]);
 
     for (const item of recalculatedItems) {
@@ -384,7 +424,7 @@ const updateBill = async (req, res) => {
         item.product_name || '',
         item.description || '',
         Number(item.quantity) || 0,
-        Number(item.actual_unit_price) || 0, // Using actual_unit_price (Tax Exclusive)
+        Number(item.actual_unit_price) || 0,
         Number(item.total_price) || 0,
       ];
 
@@ -396,14 +436,69 @@ const updateBill = async (req, res) => {
       );
     }
 
+    // 7. Apply Stock for New Items (Increase Stock) & Update Cost Price
+    for (const item of recalculatedItems) {
+      if (item.product_id) {
+        await conn.execute(
+          'UPDATE products SET quantity_on_hand = quantity_on_hand + ?, cost_price = ? WHERE id = ? AND company_id = ?',
+          [Number(item.quantity) || 0, Number(item.actual_unit_price) || 0, item.product_id, company_id]
+        );
+      }
+    }
+
+    // 8. Update Stock Order (FIFO Tracking)
+    const [stockOrders] = await conn.query(
+      `SELECT id FROM orders WHERE order_no LIKE ? AND company_id = ?`,
+      [`BILL-STK-${bill_id}-%`, company_id]
+    );
+
+    if (stockOrders.length > 0) {
+      const stockOrderId = stockOrders[0].id;
+
+      await conn.execute(
+        `UPDATE orders SET total_amount = ? WHERE id = ?`,
+        [calculatedTotal, stockOrderId]
+      );
+
+      await conn.execute(`DELETE FROM order_items WHERE order_id=?`, [stockOrderId]);
+
+      for (const item of recalculatedItems) {
+        if (item.product_id) {
+          const qty = Number(item.quantity) || 0;
+          const rate = Number(item.actual_unit_price) || 0;
+
+          await conn.execute(
+            `INSERT INTO order_items (
+                            order_id, product_id, name, sku, description, qty, rate, amount, 
+                            received, closed, remaining_qty, stock_status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              stockOrderId,
+              item.product_id,
+              item.product_name || '',
+              '',
+              `Stock from Bill #${currentBill.bill_number} (Edited)`,
+              qty,
+              rate,
+              Number(item.total_price) || 0,
+              true, // received
+              true, // closed
+              qty,
+              'in_stock'
+            ]
+          );
+        }
+      }
+    }
+
     await conn.commit();
     res.json({ message: "Bill updated successfully" });
   } catch (error) {
-    await conn.rollback();
-    console.error(error);
+    if (conn) await conn.rollback();
+    console.error("Error updating bill:", error);
     res.status(500).json({ error: "Failed to update bill" });
   } finally {
-    conn.release();
+    if (conn) conn.release();
   }
 };
 
