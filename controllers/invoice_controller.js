@@ -1950,14 +1950,20 @@ const processRefund = asyncHandler(async (req, res) => {
 
     // --- Generate Refund Number ---
     const [companyRows] = await connection.query(
-      `SELECT refund_prefix, current_refund_number, invoice_separators FROM company WHERE company_id = ?`,
+      `SELECT invoice_prefix, current_refund_number, invoice_separators FROM company WHERE company_id = ?`,
       [cId]
     );
     const companySettings = companyRows[0] || {};
-    const refundPrefix = companySettings.refund_prefix || 'REF';
+    const prefix = companySettings.invoice_prefix || 'INV';
     const nextRefundNum = (companySettings.current_refund_number || 0) + 1;
-    const separator = companySettings.invoice_separators ? '-' : '';
-    const refundNumber = `${refundPrefix}${separator}${String(nextRefundNum).padStart(5, '0')}`;
+    const useSeparator = (companySettings.invoice_separators !== 0 && companySettings.invoice_separators !== false);
+    const separator = useSeparator ? '-' : '';
+
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+
+    // Format: PREFIX-YY-REF-XXXX
+    const refundNumber = `${prefix}${separator}${yy}${separator}REF${separator}${String(nextRefundNum).padStart(4, '0')}`;
 
     // Update next refund number
     await connection.query(
