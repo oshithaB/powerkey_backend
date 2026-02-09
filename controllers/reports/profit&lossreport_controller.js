@@ -107,6 +107,11 @@ class ReportController {
             `, [company_id, ...dateParams]);
 
             // Other Expenses - From 'bills' table (excluding cancelled)
+            // UPDATED: User requested to EXCLUDE supplier bills from expenses
+            const [otherExpensesResult] = await db.execute(`
+                SELECT 0 as other_expenses
+            `);
+            /* 
             const [otherExpensesResult] = await db.execute(`
                 SELECT 
                     COALESCE(SUM(total_amount), 0) as other_expenses
@@ -114,7 +119,8 @@ class ReportController {
                 WHERE company_id = ?
                 AND status != 'cancelled'
                 AND bill_date BETWEEN ? AND ?
-            `, [company_id, ...dateParams]);
+            `, [company_id, ...dateParams]); 
+            */
 
             // 4. ADDITIONAL METRICS
 
