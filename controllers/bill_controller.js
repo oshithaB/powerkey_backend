@@ -179,9 +179,15 @@ const createBill = async (req, res) => {
     // 1. Update Product Inventory
     for (const item of recalculatedItems) {
       if (item.product_id) {
+        // NEW LOGIC: Calculate Cost Price WITH Tax
+        // total_price includes tax. quantity is the number of items.
+        // cost_price = total_price / quantity
+        const qty = Number(item.quantity) || 1; // Avoid division by zero
+        const costPriceWithTax = Number((Number(item.total_price) / qty).toFixed(4));
+
         await conn.execute(
           'UPDATE products SET quantity_on_hand = quantity_on_hand + ?, cost_price = ? WHERE id = ? AND company_id = ?',
-          [Number(item.quantity) || 0, Number(item.actual_unit_price) || 0, item.product_id, company_id]
+          [Number(item.quantity) || 0, costPriceWithTax, item.product_id, company_id]
         );
       }
     }
@@ -439,9 +445,15 @@ const updateBill = async (req, res) => {
     // 7. Apply Stock for New Items (Increase Stock) & Update Cost Price
     for (const item of recalculatedItems) {
       if (item.product_id) {
+        // NEW LOGIC: Calculate Cost Price WITH Tax
+        // total_price includes tax. quantity is the number of items.
+        // cost_price = total_price / quantity
+        const qty = Number(item.quantity) || 1; // Avoid division by zero
+        const costPriceWithTax = Number((Number(item.total_price) / qty).toFixed(4));
+
         await conn.execute(
           'UPDATE products SET quantity_on_hand = quantity_on_hand + ?, cost_price = ? WHERE id = ? AND company_id = ?',
-          [Number(item.quantity) || 0, Number(item.actual_unit_price) || 0, item.product_id, company_id]
+          [Number(item.quantity) || 0, costPriceWithTax, item.product_id, company_id]
         );
       }
     }
