@@ -16,4 +16,21 @@ const pool = mysql.createPool({
   connectTimeout: 1800000
 });
 
+
+pool.on('connection', (connection) => {
+  console.log('DB Connection established');
+});
+
+pool.on('acquire', (connection) => {
+  console.log('DB Connection acquired');
+});
+
+pool.on('release', (connection) => {
+  console.log('DB Connection released');
+});
+
+pool.on('enqueue', () => {
+  console.log('DB Connection enqueued (pool exhausted?)');
+});
+
 module.exports = pool;

@@ -1,6 +1,6 @@
 const db = require('../DB/db');
 
-const createExpense = async (req, res) => { 
+const createExpense = async (req, res) => {
   const { company_id, expense_number, payment_account_id, payment_date, payment_method, payee_id, notes, total_amount, items } = req.body;
 
   console.log('Creating expense:', req.body);
@@ -10,16 +10,18 @@ const createExpense = async (req, res) => {
     return res.status(400).json({ error: 'Company ID, expense number, payment date, total amount, and at least one item are required.' });
   }
 
+  let connection;
   try {
-    // Start a transaction - use query instead of execute
-    await db.query('START TRANSACTION');
+    // Start a transaction - use dedicated connection
+    connection = await db.getConnection();
+    await connection.beginTransaction();
 
     // Insert expense
     const expenseQuery = `
       INSERT INTO expenses (company_id, expense_number, payment_account_id, payment_date, payment_method_id, payee_id, notes, amount)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const [expenseResult] = await db.execute(expenseQuery, [
+    const [expenseResult] = await connection.execute(expenseQuery, [
       company_id,
       expense_number.trim(),
       payment_account_id || null,
@@ -41,7 +43,7 @@ const createExpense = async (req, res) => {
       if (!item.category_id || item.category_id === 0 || !item.amount || item.amount <= 0) {
         throw new Error('Each item must have a valid category and amount greater than 0.');
       }
-      await db.execute(itemQuery, [
+      await connection.execute(itemQuery, [
         expenseId,
         item.category_id,
         item.description || null,
@@ -49,8 +51,8 @@ const createExpense = async (req, res) => {
       ]);
     }
 
-    // Commit transaction - use query instead of execute
-    await db.query('COMMIT');
+    // Commit transaction
+    await connection.commit();
 
     res.status(201).json({
       message: 'Expense created successfully.',
@@ -59,10 +61,12 @@ const createExpense = async (req, res) => {
       total_amount
     });
   } catch (error) {
-    // Rollback transaction - use query instead of execute
-    await db.query('ROLLBACK');
+    // Rollback transaction
+    if (connection) await connection.rollback();
     console.error('Error creating expense:', error);
     res.status(500).json({ error: error.message || 'Failed to create expense.' });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -103,7 +107,7 @@ const getExpenses = async (req, res) => {
 };
 
 const updateExpense = async (req, res) => {
-  const { expense_id, company_id} = req.params;
+  const { expense_id, company_id } = req.params;
 
   console.log('Updating expense:', { expense_id, company_id, body: req.body });
 
@@ -265,7 +269,7 @@ const addCategory = async (req, res) => {
   }
 };
 
-const getExpenseCategories = async (req, res) => { 
+const getExpenseCategories = async (req, res) => {
   const { company_id } = req.params;
 
   console.log('Fetching categories for company ID:', company_id);
@@ -343,16 +347,17 @@ const addPaymentAccountType = async (req, res) => {
     return res.status(400).json({ error: 'Company ID, account type, and at least one detail are required.' });
   }
 
+  let connection;
   try {
-
-    await db.query('START TRANSACTION');
+    connection = await db.getConnection();
+    await connection.beginTransaction();
 
     // Insert into account_type table
     const typeQuery = `
       INSERT INTO account_type (company_id, account_type_name) 
       VALUES (?, ?)
     `;
-    const [typeResult] = await db.execute(typeQuery, [company_id, account_type.trim()]);
+    const [typeResult] = await connection.execute(typeQuery, [company_id, account_type.trim()]);
     const accountTypeId = typeResult.insertId;
 
     // Insert details into detail_type table
@@ -364,11 +369,11 @@ const addPaymentAccountType = async (req, res) => {
       if (!detail || detail.trim() === '') {
         throw new Error('Each detail must be a non-empty string.');
       }
-      await db.execute(detailQuery, [accountTypeId, detail.trim()]);
+      await connection.execute(detailQuery, [accountTypeId, detail.trim()]);
     }
 
     // ✅ Use query for transaction control
-    await db.query('COMMIT');
+    await connection.commit();
 
     res.status(201).json({
       message: 'Payment account type and details created successfully.',
@@ -378,9 +383,11 @@ const addPaymentAccountType = async (req, res) => {
     });
   } catch (err) {
     // Rollback on error
-    await db.query('ROLLBACK');
+    if (connection) await connection.rollback();
     console.error('Error creating payment account type:', err);
     res.status(500).json({ error: 'Failed to create payment account type.' });
+  } finally {
+    if (connection) connection.release();
   }
 };
 

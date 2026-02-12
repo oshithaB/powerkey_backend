@@ -39,12 +39,14 @@ const createCompany = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Company with this registration number already exists.' });
         }
 
-        // Start transaction
-        await db.query('START TRANSACTION');
-
+        let connection;
         try {
+            // Start transaction
+            connection = await db.getConnection();
+            await connection.beginTransaction();
+
             // Insert new company
-            const [result] = await db.query(
+            const [result] = await connection.query(
                 'INSERT INTO company (name, is_taxable, tax_number, company_logo, address, contact_number, email_address, registration_number, terms_and_conditions, notes, opening_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
                     companyName,
@@ -79,7 +81,7 @@ const createCompany = async (req, res) => {
 
                 for (const taxRate of parsedTaxRates) {
                     if (taxRate.name && taxRate.rate > 0) {
-                        await db.query(
+                        await connection.query(
                             'INSERT INTO tax_rates (company_id, name, rate, is_default) VALUES (?, ?, ?, ?)',
                             [companyId, taxRate.name, taxRate.rate, taxRate.is_default || false]
                         );
@@ -88,7 +90,7 @@ const createCompany = async (req, res) => {
             }
 
             // Commit transaction
-            await db.query('COMMIT');
+            await connection.commit();
 
             console.log('New company created:', result);
 
@@ -116,9 +118,11 @@ const createCompany = async (req, res) => {
 
         } catch (error) {
             // Rollback transaction on error
-            await db.query('ROLLBACK');
+            if (connection) await connection.rollback();
             console.error('Transaction error:', error);
             throw error;
+        } finally {
+            if (connection) connection.release();
         }
 
     } catch (error) {
@@ -291,10 +295,12 @@ const updateCompany = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Company not found for update' });
         }
 
-        // Start transaction
-        await db.query('START TRANSACTION');
-
+        let connection;
         try {
+            // Start transaction
+            connection = await db.getConnection();
+            await connection.beginTransaction();
+
             // Handle taxable status
             if (fieldsToUpdate.is_taxable) {
                 fieldsToUpdate.is_taxable = fieldsToUpdate.is_taxable === 'Taxable' ? 1 : 0;
@@ -302,7 +308,7 @@ const updateCompany = async (req, res) => {
                 // If changing to non-taxable, clear tax number and delete existing tax rates
                 if (fieldsToUpdate.is_taxable === 0) {
                     fieldsToUpdate.tax_number = null;
-                    await db.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
+                    await connection.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
                     console.log(`Deleted tax rates for company: ${companyId}`);
                 } else if (fieldsToUpdate.is_taxable === 1 && updates.tax_rates) {
                     // If changing to taxable and tax rates are provided, insert them
@@ -316,12 +322,12 @@ const updateCompany = async (req, res) => {
                     }
 
                     // Delete existing tax rates before inserting new ones
-                    await db.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
+                    await connection.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
                     console.log(`Cleared existing tax rates for company: ${companyId}`);
 
                     for (const taxRate of parsedTaxRates) {
                         if (taxRate.name && taxRate.rate > 0) {
-                            await db.query(
+                            await connection.query(
                                 'INSERT INTO tax_rates (company_id, name, rate, is_default) VALUES (?, ?, ?, ?)',
                                 [companyId, taxRate.name, taxRate.rate, taxRate.is_default || false]
                             );
@@ -333,13 +339,13 @@ const updateCompany = async (req, res) => {
 
             // Check for registration number conflicts
             if (fieldsToUpdate.registration_number) {
-                const [conflict] = await db.query(
+                const [conflict] = await connection.query(
                     'SELECT * FROM company WHERE registration_number = ? AND company_id != ?',
                     [fieldsToUpdate.registration_number, companyId]
                 );
 
                 if (conflict.length > 0) {
-                    await db.query('ROLLBACK');
+                    await connection.rollback();
                     return res.status(400).json({ success: false, message: 'Company with this registration number already exists' });
                 }
             }
@@ -353,22 +359,22 @@ const updateCompany = async (req, res) => {
             }
 
             if (setClauses.length === 0) {
-                await db.query('ROLLBACK');
+                await connection.rollback();
                 return res.status(400).json({ success: false, message: 'No valid fields to update' });
             }
 
             values.push(companyId);
 
             const updateQuery = `UPDATE company SET ${setClauses.join(', ')} WHERE company_id = ?`;
-            const [result] = await db.query(updateQuery, values);
+            const [result] = await connection.query(updateQuery, values);
 
             if (result.affectedRows === 0) {
-                await db.query('ROLLBACK');
+                await connection.rollback();
                 return res.status(400).json({ success: false, message: 'No changes made to the company' });
             }
 
             // Commit transaction
-            await db.query('COMMIT');
+            await connection.commit();
 
             return res.status(200).json({
                 success: true,
@@ -377,9 +383,11 @@ const updateCompany = async (req, res) => {
 
         } catch (error) {
             // Rollback transaction on error
-            await db.query('ROLLBACK');
+            if (connection) await connection.rollback();
             console.error('Transaction error during company update:', error);
             throw error;
+        } finally {
+            if (connection) connection.release();
         }
 
     } catch (error) {
@@ -403,33 +411,35 @@ const deleteCompany = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Company not found' });
         }
 
-        // Start transaction
-        await db.query('START TRANSACTION');
-
+        let connection;
         try {
+            // Start transaction
+            connection = await db.getConnection();
+            await connection.beginTransaction();
+
             // Delete related records in the correct order to avoid foreign key constraint errors
 
             // Delete tax rates first
-            await db.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
+            await connection.query('DELETE FROM tax_rates WHERE company_id = ?', [companyId]);
             console.log('Deleted tax rates for company:', companyId);
 
             // Delete customers (note: table name is 'customer' not 'customers')
-            await db.query('DELETE FROM customer WHERE company_id = ?', [companyId]);
+            await connection.query('DELETE FROM customer WHERE company_id = ?', [companyId]);
             console.log('Deleted customers for company:', companyId);
 
             // Delete vendors
-            await db.query('DELETE FROM vendor WHERE company_id = ?', [companyId]);
+            await connection.query('DELETE FROM vendor WHERE company_id = ?', [companyId]);
             console.log('Deleted vendors for company:', companyId);
 
             // Delete the company
-            const [result] = await db.query('DELETE FROM company WHERE company_id = ?', [companyId]);
+            const [result] = await connection.query('DELETE FROM company WHERE company_id = ?', [companyId]);
 
             if (result.affectedRows === 0) {
                 throw new Error('Failed to delete company');
             }
 
             // Commit transaction
-            await db.query('COMMIT');
+            await connection.commit();
 
             console.log('Company deleted:', companyId);
             return res.status(200).json({
@@ -439,9 +449,11 @@ const deleteCompany = async (req, res) => {
 
         } catch (error) {
             // Rollback transaction on error
-            await db.query('ROLLBACK');
+            if (connection) await connection.rollback();
             console.error('Transaction error during company deletion:', error);
             throw error;
+        } finally {
+            if (connection) connection.release();
         }
 
     } catch (error) {

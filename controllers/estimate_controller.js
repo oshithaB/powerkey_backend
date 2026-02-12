@@ -382,75 +382,76 @@ const createEstimate = async (req, res) => {
 };
 
 const editEstimate = async (req, res) => {
+  const {
+    id,
+    estimate_number,
+    company_id,
+    customer_id,
+    employee_id,
+    estimate_date,
+    expiry_date,
+    head_note,
+    subtotal,
+    discount_type,
+    discount_amount,
+    shipping_cost,
+    tax_amount,
+    total_amount,
+    status,
+    is_active,
+    notes,
+    terms,
+    shipping_address,
+    billing_address,
+    ship_via,
+    shipping_date,
+    tracking_number,
+    items
+  } = req.body;
+
+  if (!id) return res.status(400).json({ error: "Estimate ID is required" });
+
+  // Validate required fields
+  if (!estimate_number || !company_id || !customer_id || !estimate_date || (subtotal === undefined || subtotal === null) || isNaN(subtotal)) {
+    return res.status(400).json({ error: "Required fields are missing or invalid" });
+  }
+
+  // Check if locked
+  if (lockStore.isLocked('estimate', id)) {
+    const lockUser = lockStore.getLock('estimate', id);
+    // Simple blocking for now as discussed
+    if (lockUser && lockUser.id !== req.userId && lockUser.id !== req.user?.id) {
+      // return res.status(403).json({ error: "Estimate is currently being edited by another user." });
+    }
+  }
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "At least one valid item is required" });
+  }
+
+  for (const item of items) {
+    if (!item.product_id || item.product_id === 0) return res.status(400).json({ error: "Each item must have a valid product ID" });
+    if (!item.description) return res.status(400).json({ error: "Each item must have a description" });
+    if (!item.quantity || item.quantity <= 0) return res.status(400).json({ error: "Each item must have a valid quantity" });
+    if ((item.unit_price === undefined || item.unit_price === null) || item.unit_price < 0) return res.status(400).json({ error: "Each item must have a valid unit price" });
+    if (item.tax_rate < 0 || item.tax_amount < 0 || item.total_price < 0) {
+      return res.status(400).json({ error: "Tax rate, tax amount, and total price must be valid" });
+    }
+  }
+
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
   try {
-    const {
-      id,
-      estimate_number,
-      company_id,
-      customer_id,
-      employee_id,
-      estimate_date,
-      expiry_date,
-      head_note,
-      subtotal,
-      discount_type,
-      discount_amount,
-      shipping_cost,
-      tax_amount,
-      total_amount,
-      status,
-      is_active,
-      notes,
-      terms,
-      shipping_address,
-      billing_address,
-      ship_via,
-      shipping_date,
-      tracking_number,
-      items
-    } = req.body;
-
-    if (!id) return res.status(400).json({ error: "Estimate ID is required" });
-
-    // Validate required fields
-    if (!estimate_number || !company_id || !customer_id || !estimate_date || (subtotal === undefined || subtotal === null) || isNaN(subtotal)) {
-      return res.status(400).json({ error: "Required fields are missing or invalid" });
-    }
-
-    // Check if locked
-    if (lockStore.isLocked('estimate', id)) {
-      const lockUser = lockStore.getLock('estimate', id);
-      // Simple blocking for now as discussed
-      if (lockUser && lockUser.id !== req.userId && lockUser.id !== req.user?.id) {
-        // return res.status(403).json({ error: "Estimate is currently being edited by another user." });
-      }
-    }
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "At least one valid item is required" });
-    }
-
-    for (const item of items) {
-      if (!item.product_id || item.product_id === 0) return res.status(400).json({ error: "Each item must have a valid product ID" });
-      if (!item.description) return res.status(400).json({ error: "Each item must have a description" });
-      if (!item.quantity || item.quantity <= 0) return res.status(400).json({ error: "Each item must have a valid quantity" });
-      if ((item.unit_price === undefined || item.unit_price === null) || item.unit_price < 0) return res.status(400).json({ error: "Each item must have a valid unit price" });
-      if (item.tax_rate < 0 || item.tax_amount < 0 || item.total_price < 0) {
-        return res.status(400).json({ error: "Tax rate, tax amount, and total price must be valid" });
-      }
-    }
-
-    await db.query('START TRANSACTION');
-
     // Update estimate
     const updateEstimateQuery = `
-        UPDATE estimates SET
-          estimate_number = ?, company_id = ?, customer_id = ?, employee_id = ?, estimate_date = ?, expiry_date = ?, head_note = ?,
-          subtotal = ?, discount_type = ?, discount_amount = ?, shipping_cost = ?, tax_amount = ?, total_amount = ?, 
-          status = ?, is_active = ?, notes = ?, terms = ?, shipping_address = ?, billing_address = ?, 
-          ship_via = ?, shipping_date = ?, tracking_number = ?
-        WHERE id = ?
-      `;
+          UPDATE estimates SET
+            estimate_number = ?, company_id = ?, customer_id = ?, employee_id = ?, estimate_date = ?, expiry_date = ?, head_note = ?,
+            subtotal = ?, discount_type = ?, discount_amount = ?, shipping_cost = ?, tax_amount = ?, total_amount = ?, 
+            status = ?, is_active = ?, notes = ?, terms = ?, shipping_address = ?, billing_address = ?, 
+            ship_via = ?, shipping_date = ?, tracking_number = ?
+          WHERE id = ?
+        `;
 
     const updateValues = [
       estimate_number, company_id, customer_id, employee_id || null, estimate_date, expiry_date || null, head_note || null,
@@ -460,21 +461,21 @@ const editEstimate = async (req, res) => {
       id
     ];
 
-    const [updateResult] = await db.query(updateEstimateQuery, updateValues);
+    const [updateResult] = await connection.query(updateEstimateQuery, updateValues);
     if (updateResult.affectedRows === 0) {
-      await db.query('ROLLBACK');
+      await connection.rollback();
       return res.status(400).json({ error: "Estimate not found or failed to update" });
     }
 
     // Delete existing items
-    await db.query('DELETE FROM estimate_items WHERE estimate_id = ?', [id]);
+    await connection.query('DELETE FROM estimate_items WHERE estimate_id = ?', [id]);
 
     // Insert updated items
     const insertItemQuery = `
-        INSERT INTO estimate_items
-          (estimate_id, product_id, description, quantity, unit_price, actual_unit_price, tax_rate, tax_amount, total_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `;
+          INSERT INTO estimate_items
+            (estimate_id, product_id, description, quantity, unit_price, actual_unit_price, tax_rate, tax_amount, total_price)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
 
     for (const item of items) {
       const itemValues = [
@@ -488,23 +489,25 @@ const editEstimate = async (req, res) => {
         item.tax_amount,
         item.total_price
       ];
-      const [itemResult] = await db.query(insertItemQuery, itemValues);
+      const [itemResult] = await connection.query(insertItemQuery, itemValues);
       if (itemResult.affectedRows === 0) {
-        await db.query('ROLLBACK');
+        await connection.rollback();
         return res.status(400).json({ error: "Failed to update estimate items" });
       }
     }
 
-    await db.query('COMMIT');
+    await connection.commit();
 
     res.status(200).json({ message: "Estimate updated successfully", estimate_id: id });
   } catch (error) {
-    await db.query('ROLLBACK');
+    if (connection) await connection.rollback();
     console.error("Error updating estimate:", error);
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: `Estimate number '${req.body.estimate_number}' already exists` });
     }
     res.status(500).json({ error: error.sqlMessage || "Internal server error" });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -574,54 +577,46 @@ const getEstimatesItems = async (req, res) => {
 }
 
 const convertEstimateToInvoice = async (req, res) => {
+  const { companyId, estimateId } = req.params;
+
+  if (!companyId || !estimateId) {
+    return res.status(400).json({ error: "Company ID and Estimate ID are required" });
+  }
+
+  // Start transaction
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
   try {
-    const { companyId, estimateId } = req.params;
-
-    if (!companyId || !estimateId) {
-      return res.status(400).json({ error: "Company ID and Estimate ID are required" });
-    }
-
-    // Start transaction
-    await db.query('START TRANSACTION');
-
     // Fetch estimate details
-    const [estimate] = await db.query(
+    const [estimate] = await connection.query(
       `SELECT 
-                e.*,
-                c.name AS customer_name,
-                emp.name AS employee_name
-             FROM estimates e
-             JOIN customer c ON e.customer_id = c.id
-             LEFT JOIN employees emp ON e.employee_id = emp.id
-             WHERE e.id = ? AND e.company_id = ? AND e.is_active = 1`,
+                  e.*,
+                  c.name AS customer_name,
+                  emp.name AS employee_name
+               FROM estimates e
+               JOIN customer c ON e.customer_id = c.id
+               LEFT JOIN employees emp ON e.employee_id = emp.id
+               WHERE e.id = ? AND e.company_id = ? AND e.is_active = 1`,
       [estimateId, companyId]
     );
 
     if (!estimate || estimate.length === 0) {
-      await db.query('ROLLBACK');
+      await connection.rollback();
       return res.status(404).json({ error: "Estimate not found" });
     }
 
     const estimateData = estimate[0];
 
-    // Check if estimate is already converted using status or invoice_id
-    // REMOVED check to allow multiple conversions as per user request
-    /*
-    if (estimateData.status === 'converted' || estimateData.invoice_id !== null) {
-      await db.query('ROLLBACK');
-      return res.status(400).json({ error: "Estimate has already been converted to an invoice" });
-    }
-    */
-
     // --- Generate Invoice Number (Standard Sequence) ---
     // Fetch company current invoice number FOR UPDATE
-    const [companyData] = await db.query(
+    const [companyData] = await connection.query(
       `SELECT invoice_prefix, current_invoice_number, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
       [companyId]
     );
 
     if (companyData.length === 0) {
-      await db.query('ROLLBACK');
+      await connection.rollback();
       return res.status(404).json({ error: "Company not found" });
     }
 
@@ -645,14 +640,14 @@ const convertEstimateToInvoice = async (req, res) => {
 
     // Create invoice
     const invoiceQuery = `
-            INSERT INTO invoices (
-                company_id, customer_id, employee_id, estimate_id, invoice_number, head_note,
-                invoice_date, due_date, discount_type, discount_value, discount_amount,
-                notes, terms, shipping_address, shipping_cost, billing_address, ship_via, 
-                shipping_date, tracking_number, subtotal, tax_amount, total_amount,
-                status, reference
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
+              INSERT INTO invoices (
+                  company_id, customer_id, employee_id, estimate_id, invoice_number, head_note,
+                  invoice_date, due_date, discount_type, discount_value, discount_amount,
+                  notes, terms, shipping_address, shipping_cost, billing_address, ship_via, 
+                  shipping_date, tracking_number, subtotal, tax_amount, total_amount,
+                  status, reference
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `;
 
     const invoiceValues = [
       companyId,
@@ -681,35 +676,35 @@ const convertEstimateToInvoice = async (req, res) => {
       estimateData.estimate_number // Reference
     ];
 
-    const [invoiceResult] = await db.query(invoiceQuery, invoiceValues);
+    const [invoiceResult] = await connection.query(invoiceQuery, invoiceValues);
 
     if (invoiceResult.affectedRows === 0) {
-      await db.query('ROLLBACK');
+      await connection.rollback();
       return res.status(400).json({ error: "Failed to create invoice" });
     }
 
     // --- Update company current_invoice_number ---
-    await db.query(
+    await connection.query(
       `UPDATE company SET current_invoice_number = ? WHERE company_id = ?`,
       [nextInvoiceNumber, companyId]
     );
 
     // Fetch estimate items
-    const [estimateItems] = await db.query(
+    const [estimateItems] = await connection.query(
       `SELECT ei.*, prod.name AS product_name
-             FROM estimate_items ei
-             JOIN products prod ON ei.product_id = prod.id
-             WHERE ei.estimate_id = ?`,
+               FROM estimate_items ei
+               JOIN products prod ON ei.product_id = prod.id
+               WHERE ei.estimate_id = ?`,
       [estimateId]
     );
 
     // Insert invoice items
     const itemQuery = `
-            INSERT INTO invoice_items (
-                invoice_id, product_id, product_name, description, quantity, unit_price, 
-                actual_unit_price, tax_rate, tax_amount, total_price
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
+              INSERT INTO invoice_items (
+                  invoice_id, product_id, product_name, description, quantity, unit_price, 
+                  actual_unit_price, tax_rate, tax_amount, total_price
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `;
 
     for (const item of estimateItems) {
       const itemValues = [
@@ -724,9 +719,9 @@ const convertEstimateToInvoice = async (req, res) => {
         item.tax_amount,
         item.total_price
       ];
-      const [itemResult] = await db.query(itemQuery, itemValues);
+      const [itemResult] = await connection.query(itemQuery, itemValues);
       if (itemResult.affectedRows === 0) {
-        await db.query('ROLLBACK');
+        await connection.rollback();
         return res.status(400).json({ error: "Failed to create invoice items" });
       }
     }
@@ -734,14 +729,14 @@ const convertEstimateToInvoice = async (req, res) => {
     // Update estimate status to 'accepted' and set invoice_id
     // Changed status from 'converted' to 'accepted' so it doesn't vanish if 'converted' is hidden
     const updateEstimateQuery = `
-            UPDATE estimates 
-            SET status = 'accepted', invoice_id = ?
-            WHERE id = ?
-        `;
-    await db.query(updateEstimateQuery, [invoiceResult.insertId, estimateId]);
+              UPDATE estimates 
+              SET status = 'accepted', invoice_id = ?
+              WHERE id = ?
+          `;
+    await connection.query(updateEstimateQuery, [invoiceResult.insertId, estimateId]);
 
     // Commit transaction
-    await db.query('COMMIT');
+    await connection.commit();
 
     res.status(200).json({
       message: "Estimate converted to invoice successfully",
@@ -749,12 +744,14 @@ const convertEstimateToInvoice = async (req, res) => {
       invoice_number: invoiceNumber
     });
   } catch (error) {
-    await db.query('ROLLBACK');
+    if (connection) await connection.rollback();
     console.error("Error converting estimate to invoice:", error);
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: `Invoice number '${invoiceNumber}' already exists` });
     }
     res.status(500).json({ error: error.sqlMessage || "Internal server error" });
+  } finally {
+    if (connection) connection.release();
   }
 };
 

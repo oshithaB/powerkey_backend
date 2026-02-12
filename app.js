@@ -146,6 +146,21 @@ io.on("connection", (socket) => {
 ========================= */
 const PORT = process.env.PORT || 3000;
 
+
+/* =========================
+   GLOBAL ERROR HANDLING
+========================= */
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Optional: Restart server or send alert
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Optional: Restart server or send alert
+  // process.exit(1); // Depending on severity
+});
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
