@@ -970,11 +970,21 @@ async function createTables(db) {
     try {
         console.log('Checking and updating products table for nullable manual_count...');
         await db.execute("ALTER TABLE products MODIFY COLUMN manual_count INT NULL DEFAULT NULL");
-        // Update existing 0s to NULL to clear false variances
-        await db.execute("UPDATE products SET manual_count = NULL WHERE manual_count = 0");
-        console.log('Products table updated: manual_count is now nullable and defaults to NULL.');
+        console.log('Products table updated: manual_count is now nullable.');
     } catch (error) {
         console.warn('Migration for nullable manual_count warning:', error.message);
+    }
+
+    // --- MIGRATION FOR CLEARING FALSE INVENTORY HISTORY ---
+    try {
+        console.log('Clearing existing inventory_adjustments log and resetting manual counts...');
+        // Reset manual_count to NULL for ALL products to clear any false physical count data
+        await db.execute("UPDATE products SET manual_count = NULL");
+        // Clear all adjustment history to fix false shrinkage reporting in P&L
+        await db.execute("DELETE FROM inventory_adjustments");
+        console.log('Inventory history cleared and manual counts reset to NULL successfully.');
+    } catch (error) {
+        console.warn('Migration for clearing inventory history warning:', error.message);
     }
 }
 
