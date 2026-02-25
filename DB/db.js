@@ -6,7 +6,7 @@ const pool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "Blish12345@",        // empty for WAMP
+  password: process.env.DB_PASSWORD || "Blish123456789@",        // empty for WAMP
   database: process.env.DB_NAME || "powerkey_erp",
   waitForConnections: true,
   connectionLimit: 10,
