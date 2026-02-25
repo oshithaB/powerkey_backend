@@ -843,7 +843,7 @@ const updateProductManualCount = async (req, res) => {
   const { product_id } = req.params;
   const { manual_count } = req.body;
 
-  if (manual_count == null || isNaN(manual_count) || manual_count < 0) {
+  if (manual_count !== null && manual_count !== undefined && (isNaN(parseFloat(manual_count)) || manual_count < 0)) {
     return res.status(400).json({
       status: 'error',
       message: 'Invalid manual count value'

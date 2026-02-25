@@ -120,13 +120,13 @@ const createProduct = async (req, res) => {
             const validatedUnitPrice = unit_price ? parseFloat(unit_price) : 0;
             const validatedCostPrice = cost_price ? parseFloat(cost_price) : 0;
             const validatedQuantity = quantity_on_hand ? parseInt(quantity_on_hand) : 0;
-            const validateManualCount = manual_count ? parseInt(manual_count) : 0;
+            const validateManualCount = (manual_count !== undefined && manual_count !== null && manual_count !== '') ? parseInt(manual_count) : null;
             const validatedReorderLevel = reorder_level ? parseInt(reorder_level) : 0;
             const validatedOrderQuantity = order_quantity ? parseInt(order_quantity) : 0;
 
             if (isNaN(validatedUnitPrice) || isNaN(validatedCostPrice) ||
                 isNaN(validatedQuantity) || isNaN(validatedReorderLevel) ||
-                isNaN(validateManualCount) || isNaN(validatedOrderQuantity)) {
+                (validateManualCount !== null && isNaN(validateManualCount)) || isNaN(validatedOrderQuantity)) {
                 return res.status(400).json({ success: false, message: 'Invalid numeric values provided' });
             }
 

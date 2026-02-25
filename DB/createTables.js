@@ -214,7 +214,7 @@ async function createTables(db) {
             unit_price decimal(15,4) DEFAULT 0,
             cost_price decimal(15,4) DEFAULT 0,
             quantity_on_hand int DEFAULT 0,
-            manual_count int DEFAULT 0,
+            manual_count int DEFAULT NULL,
             reorder_level int DEFAULT 0,
             order_quantity int DEFAULT 0,
             commission decimal(10,2) DEFAULT 0.00,
@@ -964,6 +964,17 @@ async function createTables(db) {
 
     } catch (error) {
         console.warn('Migration for PO Tax/Discount warning:', error.message);
+    }
+
+    // --- MIGRATION FOR NULLABLE MANUAL COUNT ---
+    try {
+        console.log('Checking and updating products table for nullable manual_count...');
+        await db.execute("ALTER TABLE products MODIFY COLUMN manual_count INT NULL DEFAULT NULL");
+        // Update existing 0s to NULL to clear false variances
+        await db.execute("UPDATE products SET manual_count = NULL WHERE manual_count = 0");
+        console.log('Products table updated: manual_count is now nullable and defaults to NULL.');
+    } catch (error) {
+        console.warn('Migration for nullable manual_count warning:', error.message);
     }
 }
 
