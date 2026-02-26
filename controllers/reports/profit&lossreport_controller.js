@@ -107,11 +107,6 @@ class ReportController {
             `, [company_id, ...dateParams]);
 
             // Other Expenses - From 'bills' table (excluding cancelled)
-            // UPDATED: User requested to EXCLUDE supplier bills from expenses
-            const [otherExpensesResult] = await db.execute(`
-                SELECT 0 as other_expenses
-            `);
-            /* 
             const [otherExpensesResult] = await db.execute(`
                 SELECT 
                     COALESCE(SUM(total_amount), 0) as other_expenses
@@ -119,8 +114,7 @@ class ReportController {
                 WHERE company_id = ?
                 AND status != 'cancelled'
                 AND bill_date BETWEEN ? AND ?
-            `, [company_id, ...dateParams]); 
-            */
+            `, [company_id, ...dateParams]);
 
             // 4. ADDITIONAL METRICS
 
@@ -533,7 +527,15 @@ class ReportController {
             // 3. OTHER INCOME AND EXPENSES
             const [otherIncomeResult] = await db.execute(`SELECT 0 as other_income`);
             const [expensesResult] = await db.execute(`SELECT 0 as expenses`);
-            const [otherExpensesResult] = await db.execute(`SELECT 0 as other_expenses`);
+            const [otherExpensesResult] = await db.execute(`
+                SELECT 
+                    COALESCE(SUM(total_amount), 0) as other_expenses
+                FROM bills
+                WHERE company_id = ?
+                AND employee_id = ?
+                AND status != 'cancelled'
+                AND bill_date BETWEEN ? AND ?
+            `, [company_id, employee_id, ...dateParams]);
 
             // 4. ADDITIONAL METRICS
             // Total Paid Amount - Actual cash received
@@ -1374,6 +1376,7 @@ class ReportController {
             // 3. OTHER INCOME AND EXPENSES
             const [otherIncomeResult] = await db.execute(`SELECT 0 as other_income`);
             const [expensesResult] = await db.execute(`SELECT 0 as expenses`);
+            // Note: bills do not directly have customer_id.
             const [otherExpensesResult] = await db.execute(`SELECT 0 as other_expenses`);
 
             // 4. ADDITIONAL METRICS
