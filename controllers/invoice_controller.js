@@ -1475,7 +1475,12 @@ const getInvoiceItems = async (req, res) => {
       return res.status(400).json({ error: "Invoice ID is required" });
     }
 
-    const query = `SELECT * FROM invoice_items WHERE invoice_id = ?`;
+    const query = `
+      SELECT ii.*, p.sku 
+      FROM invoice_items ii 
+      LEFT JOIN products p ON ii.product_id = p.id 
+      WHERE ii.invoice_id = ?
+    `;
     const [items] = await db.query(query, [invoiceId]);
 
     if (items.length === 0) {
