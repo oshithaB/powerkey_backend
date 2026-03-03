@@ -86,7 +86,7 @@ class ReportController {
                 JOIN products p ON ia.product_id = p.id
                 WHERE ia.company_id = ?
                 AND ia.adjustment_quantity < 0
-                AND ia.reason != 'Manual Adjustment' 
+                AND ia.reason NOT IN ('Direct Correction')
                 AND DATE(ia.created_at) BETWEEN ? AND ?
             `, [company_id, ...dateParams]);
 
@@ -345,7 +345,7 @@ class ReportController {
                     JOIN products p ON ia.product_id = p.id
                     WHERE ia.company_id = ?
                     AND ia.adjustment_quantity < 0
-                    AND ia.reason != 'Manual Adjustment'
+                    AND ia.reason NOT IN ('Direct Correction')
                     AND DATE(ia.created_at) BETWEEN ? AND ?
                 `, [company_id, startDateStr, endDateStr]);
 

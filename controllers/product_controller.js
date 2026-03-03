@@ -457,11 +457,12 @@ const updateProduct = async (req, res) => {
                 const diff = newQty - currentQty;
 
                 // Log the adjustment
+                const adjustmentReason = diff > 0 ? 'Stock Adjustment - Surplus' : 'Manual Adjustment';
                 await connection.query(
                     `INSERT INTO inventory_adjustments (
                         company_id, product_id, previous_quantity, new_quantity, adjustment_quantity, reason
                     ) VALUES (?, ?, ?, ?, ?, ?)`,
-                    [company_id, product_id, currentQty, newQty, diff, diff > 0 ? 'Stock Adjustment - Surplus' : 'Stock Adjustment - Shrinkage']
+                    [company_id, product_id, currentQty, newQty, diff, adjustmentReason]
                 );
 
                 if (diff > 0) {
@@ -719,6 +720,7 @@ const adjustStock = async (req, res) => {
         );
 
         // Record in Inventory Adjustments
+        const finalReason = reason || 'Manual Adjustment';
         await connection.query(
             `INSERT INTO inventory_adjustments (
                 company_id, product_id, previous_quantity, new_quantity, adjustment_quantity, reason
@@ -729,9 +731,17 @@ const adjustStock = async (req, res) => {
                 currentQty,
                 targetQty,
                 diff,
-                reason || 'Manual Adjustment' // Explicitly marks this type
+                finalReason
             ]
         );
+
+        // If it's a Direct Correction, also update manual_count to match
+        if (finalReason === 'Direct Correction') {
+            await connection.query(
+                'UPDATE products SET manual_count = ? WHERE id = ?',
+                [targetQty, product_id]
+            );
+        }
 
         // Update Order Items (FIFO Logic)
         if (diff > 0) {
