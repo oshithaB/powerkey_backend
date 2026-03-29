@@ -106,15 +106,10 @@ class ReportController {
                 AND payment_date BETWEEN ? AND ?
             `, [company_id, ...dateParams]);
 
-            // Other Expenses - From 'bills' table (excluding cancelled)
+            // Other Expenses - From 'bills' table (Removed as per user request to exclude supplier bills)
             const [otherExpensesResult] = await db.execute(`
-                SELECT 
-                    COALESCE(SUM(total_amount), 0) as other_expenses
-                FROM bills
-                WHERE company_id = ?
-                AND status != 'cancelled'
-                AND bill_date BETWEEN ? AND ?
-            `, [company_id, ...dateParams]);
+                SELECT 0 as other_expenses
+            `);
 
             // 4. ADDITIONAL METRICS
 
@@ -527,15 +522,7 @@ class ReportController {
             // 3. OTHER INCOME AND EXPENSES
             const [otherIncomeResult] = await db.execute(`SELECT 0 as other_income`);
             const [expensesResult] = await db.execute(`SELECT 0 as expenses`);
-            const [otherExpensesResult] = await db.execute(`
-                SELECT 
-                    COALESCE(SUM(total_amount), 0) as other_expenses
-                FROM bills
-                WHERE company_id = ?
-                AND employee_id = ?
-                AND status != 'cancelled'
-                AND bill_date BETWEEN ? AND ?
-            `, [company_id, employee_id, ...dateParams]);
+            const [otherExpensesResult] = await db.execute(`SELECT 0 as other_expenses`);
 
             // 4. ADDITIONAL METRICS
             // Total Paid Amount - Actual cash received

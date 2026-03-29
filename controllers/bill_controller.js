@@ -707,11 +707,99 @@ const recordPayment = async (req, res) => {
   }
 };
 
+const deleteBill = async (req, res) => {
+  const { company_id, bill_id } = req.params;
+
+  console.log("Received deleteBill request for company_id:", company_id, "bill_id:", bill_id);
+
+  const conn = await db.getConnection();
+  await conn.beginTransaction();
+
+  try {
+    // 1. Fetch Existing Bill
+    const [existingBill] = await conn.query(
+      `SELECT * FROM bills WHERE id = ? AND company_id = ?`,
+      [bill_id, company_id]
+    );
+
+    if (existingBill.length === 0) {
+      throw new Error("Bill not found");
+    }
+
+    const currentBill = existingBill[0];
+
+    // 2. Fetch Existing Items
+    const [existingItems] = await conn.query(
+      `SELECT * FROM bill_items WHERE bill_id = ?`,
+      [bill_id]
+    );
+
+    // 3. Revert Stock for Existing Items (Decrease Stock)
+    for (const item of existingItems) {
+      if (item.product_id) {
+        await conn.execute(
+          'UPDATE products SET quantity_on_hand = quantity_on_hand - ? WHERE id = ? AND company_id = ?',
+          [Number(item.quantity) || 0, item.product_id, company_id]
+        );
+      }
+    }
+
+    // 4. Update Vendor Balance (Revert the balance due impact)
+    if (currentBill.vendor_id && currentBill.status !== 'cancelled' && currentBill.status !== 'proforma') {
+      const balanceToRevert = Number(currentBill.balance_due) || 0;
+      if (balanceToRevert > 0) {
+        await conn.execute(
+          'UPDATE vendor SET balance = balance - ? WHERE vendor_id = ? AND company_id = ?',
+          [balanceToRevert, currentBill.vendor_id, company_id]
+        );
+      }
+    }
+
+    // 5. Update linked Order (if this bill was generated from an order)
+    if (currentBill.order_id) {
+      await conn.execute(
+        'UPDATE orders SET bill_id = NULL WHERE id = ? AND company_id = ?',
+        [currentBill.order_id, company_id]
+      );
+    }
+
+    // 6. Remove Stock Tracking Order (FIFO Tracking)
+    const [stockOrders] = await conn.query(
+      `SELECT id FROM orders WHERE order_no LIKE ? AND company_id = ?`,
+      [`BILL-STK-${bill_id}-%`, company_id]
+    );
+
+    for (const stockOrder of stockOrders) {
+      await conn.execute(`DELETE FROM order_items WHERE order_id = ?`, [stockOrder.id]);
+      await conn.execute(`DELETE FROM orders WHERE id = ? AND company_id = ?`, [stockOrder.id, company_id]);
+    }
+
+    // 7. Delete Bill Payments
+    await conn.execute(`DELETE FROM bill_payments WHERE bill_id = ? AND company_id = ?`, [bill_id, company_id]);
+
+    // 8. Delete Bill Items
+    await conn.execute(`DELETE FROM bill_items WHERE bill_id = ?`, [bill_id]);
+
+    // 9. Delete Bill
+    await conn.execute(`DELETE FROM bills WHERE id = ? AND company_id = ?`, [bill_id, company_id]);
+
+    await conn.commit();
+    res.json({ message: "Bill deleted successfully" });
+  } catch (error) {
+    if (conn) await conn.rollback();
+    console.error("Error deleting bill:", error);
+    res.status(500).json({ error: error.message || "Failed to delete bill" });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
 module.exports = {
   createBill,
   getAllBills,
   getBillItemsById,
   updateBill,
   getBillsByVendor,
-  recordPayment
+  recordPayment,
+  deleteBill
 };

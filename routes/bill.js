@@ -9,7 +9,8 @@ const {
     getBillItemsById,
     updateBill,
     getBillsByVendor,
-    recordPayment
+    recordPayment,
+    deleteBill
 } = require('../controllers/bill_controller');
 
 router.post(
@@ -51,6 +52,13 @@ router.post(
     verifyToken,
     authorizedRoles(['admin', 'store_keeper']),
     recordPayment
+);
+
+router.delete(
+    '/bills/:company_id/:bill_id',
+    verifyToken,
+    authorizedRoles(['admin', 'store_keeper']),
+    deleteBill
 );
 
 module.exports = router;
