@@ -20,7 +20,8 @@ const {
   processRefund,
   getInvoiceRefunds,
   getInvoicePayments,
-  updatePayment
+  updatePayment,
+  getInvoiceSummary
 } = require('../controllers/invoice_controller');
 
 // Configure multer for file uploads
@@ -48,6 +49,13 @@ const upload = multer({
 });
 
 // Routes
+router.get(
+  '/getInvoiceSummary/:company_id',
+  verifyToken,
+  authorizedRoles(['admin', 'sale', 'staff']),
+  getInvoiceSummary
+);
+
 router.get(
   '/getInvoice/:company_id',
   verifyToken,

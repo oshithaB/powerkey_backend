@@ -1345,6 +1345,15 @@ const getInvoice = async (req, res) => {
 const getInvoices = async (req, res) => {
   try {
     const { company_id } = req.params;
+    const {
+      limit = 100,
+      offset = 0,
+      search = '',
+      status = '',
+      customer = '',
+      dateFrom = '',
+      dateTo = ''
+    } = req.query;
 
     if (!company_id) {
       return res.status(400).json({ error: "Company ID is required" });
@@ -1354,46 +1363,65 @@ const getInvoices = async (req, res) => {
     try {
       await connection.beginTransaction();
 
-      const query = `SELECT i.*, c.name AS customer_name, c.email AS customer_email, c.phone AS customer_phone, c.tax_number AS customer_tax_number, c.credit_limit AS customer_credit_limit,
+      // Update overdue invoices efficiently
+      await connection.query(
+        `UPDATE invoices 
+         SET status = 'overdue', updated_at = NOW()
+         WHERE company_id = ? 
+           AND status NOT IN ('proforma', 'paid', 'cancelled')
+           AND due_date < NOW()
+           AND balance_due > 0`,
+        [company_id]
+      );
+
+      let query = `SELECT i.*, c.name AS customer_name, c.email AS customer_email, c.phone AS customer_phone, c.tax_number AS customer_tax_number, c.credit_limit AS customer_credit_limit,
                      e.name AS employee_name,
                      (SELECT payment_method FROM payments WHERE invoice_id = i.id ORDER BY id DESC LIMIT 1) as payment_method
-                     FROM invoices i
-                     LEFT JOIN customer c ON i.customer_id = c.id
-                     LEFT JOIN employees e ON i.employee_id = e.id
-                     WHERE i.company_id = ?
-                     ORDER BY i.created_at DESC`;
+                   FROM invoices i
+                   LEFT JOIN customer c ON i.customer_id = c.id
+                   LEFT JOIN employees e ON i.employee_id = e.id
+                   WHERE i.company_id = ?`;
 
-      const [invoices] = await connection.query(query, [company_id]);
+      const queryParams = [company_id];
 
-      const currentDate = new Date();
+      if (status) {
+        query += ` AND i.status = ?`;
+        queryParams.push(status);
+      }
+
+      if (customer) {
+        query += ` AND (c.name LIKE ? OR 'Unknown Customer' LIKE ?)`;
+        const cPattern = `%${customer}%`;
+        queryParams.push(cPattern, cPattern);
+      }
+
+      if (search) {
+        query += ` AND (i.invoice_number LIKE ? OR c.name LIKE ? OR 'Unknown Customer' LIKE ?)`;
+        const searchPattern = `%${search}%`;
+        queryParams.push(searchPattern, searchPattern, searchPattern);
+      }
+
+      if (dateFrom) {
+        query += ` AND DATE(i.invoice_date) >= DATE(?)`;
+        queryParams.push(dateFrom);
+      }
+
+      if (dateTo) {
+        query += ` AND DATE(i.invoice_date) <= DATE(?)`;
+        queryParams.push(dateTo);
+      }
+
+      // Count total matching records for proper frontend pagination tracking
+      const countQuery = `SELECT COUNT(*) as total FROM (${query}) as countTable`;
+      const [countResult] = await connection.query(countQuery, queryParams);
+      const totalCount = countResult[0].total;
+
+      query += ` ORDER BY i.created_at DESC LIMIT ? OFFSET ?`;
+      queryParams.push(parseInt(limit, 10), parseInt(offset, 10));
+
+      const [invoices] = await connection.query(query, queryParams);
 
       for (const invoice of invoices) {
-        const dueDate = invoice.due_date ? new Date(invoice.due_date) : null;
-        const paidAmount = Number(invoice.paid_amount) || 0;
-        const totalAmount = Number(invoice.total_amount) || 0;
-        const balanceDue = totalAmount - paidAmount;
-
-        // Only update status to overdue if NOT proforma
-        if (
-          invoice.status !== 'proforma' &&
-          dueDate &&
-          dueDate < currentDate &&
-          invoice.status !== 'paid' &&
-          invoice.status !== 'cancelled' &&
-          balanceDue > 0
-        ) {
-          await connection.query(
-            `UPDATE invoices 
-             SET status = 'overdue', balance_due = ?, updated_at = ?
-             WHERE id = ? AND company_id = ?`,
-            [balanceDue, new Date(), invoice.id, company_id]
-          );
-
-          invoice.status = 'overdue';
-          invoice.balance_due = balanceDue;
-          invoice.updated_at = new Date().toISOString();
-        }
-
         const [items] = await connection.query(
           `SELECT * FROM invoice_items WHERE invoice_id = ?`,
           [invoice.id]
@@ -1405,7 +1433,6 @@ const getInvoices = async (req, res) => {
           updated_at: item.updated_at ? new Date(item.updated_at).toISOString() : null
         }));
 
-        // Check for refunds
         const [refundRows] = await connection.query(
           `SELECT count(*) as count FROM refunds WHERE invoice_id = ? AND company_id = ?`,
           [invoice.id, company_id]
@@ -1420,7 +1447,7 @@ const getInvoices = async (req, res) => {
       }
 
       await connection.commit();
-      res.status(200).json(invoices);
+      res.status(200).json({ invoices, totalCount });
     } catch (error) {
       await connection.rollback();
       console.error('Error processing invoices:', error);
@@ -2455,6 +2482,60 @@ const updatePayment = asyncHandler(async (req, res) => {
   }
 });
 
+// Get Invoice Summary
+const getInvoiceSummary = async (req, res) => {
+  try {
+    const { company_id } = req.params;
+
+    if (!company_id) {
+      return res.status(400).json({ error: "Company ID is required" });
+    }
+
+    const query = `
+      SELECT status, 
+             SUM(balance_due) as total_balance_due, 
+             SUM(total_amount) as sum_total_amount, 
+             SUM(paid_amount) as total_paid_amount
+      FROM invoices
+      WHERE company_id = ?
+      GROUP BY status
+    `;
+
+    const [rows] = await db.query(query, [company_id]);
+    
+    // Default summary structure
+    const summary = {
+      overdue: 0,
+      balanceDue: 0,
+      partiallyPaid: 0,
+      paid: 0,
+      cancelled: 0
+    };
+
+    rows.forEach(row => {
+      const balanceDueNum = Number(row.total_balance_due) || 0;
+      const sumTotalAmountNum = Number(row.sum_total_amount) || 0;
+      const paidAmountNum = Number(row.total_paid_amount) || 0;
+
+      if (row.status === 'overdue') summary.overdue += balanceDueNum;
+      
+      // Balance Due calculation matching frontend: (partially_paid ? balance_due : total_amount) for specific statuses
+      if (['partially_paid', 'opened', 'sent'].includes(row.status)) {
+        summary.balanceDue += (row.status === 'partially_paid') ? balanceDueNum : sumTotalAmountNum;
+      }
+      
+      if (row.status === 'partially_paid') summary.partiallyPaid += paidAmountNum;
+      if (row.status === 'paid') summary.paid += paidAmountNum;
+      if (row.status === 'cancelled') summary.cancelled += sumTotalAmountNum;
+    });
+
+    res.status(200).json(summary);
+  } catch (error) {
+    console.error('Error fetching invoice summary:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 module.exports = {
   createInvoice,
   updateInvoice,
@@ -2471,5 +2552,6 @@ module.exports = {
   processRefund,
   getInvoiceRefunds,
   getInvoicePayments,
-  updatePayment
+  updatePayment,
+  getInvoiceSummary
 };

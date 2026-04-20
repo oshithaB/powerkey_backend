@@ -4,6 +4,14 @@ const lockStore = require('../utils/lockStore');
 const getEstimates = async (req, res) => {
   try {
     const { companyId } = req.params;
+    const {
+      limit = 100,
+      offset = 0,
+      search = '',
+      status = '',
+      customer = '',
+      date = ''
+    } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ error: "Company ID is required" });
@@ -18,7 +26,7 @@ const getEstimates = async (req, res) => {
               AND expiry_date < NOW()
         `, [companyId]);
 
-    const query = `SELECT 
+    let query = `SELECT 
                             e.id,
                             e.estimate_number,
                             e.company_id,
@@ -53,11 +61,43 @@ const getEstimates = async (req, res) => {
                         LEFT JOIN 
                             employees emp ON e.employee_id = emp.id
                         WHERE 
-                            e.company_id = ? AND e.is_active = 1
-                        ORDER BY e.created_at DESC;
-                        `;
-    const [estimates] = await db.query(query, [companyId]);
-    res.json(estimates);
+                            e.company_id = ? AND e.is_active = 1`;
+
+    const queryParams = [companyId];
+
+    if (status) {
+      query += ` AND e.status = ?`;
+      queryParams.push(status);
+    }
+
+    if (customer) {
+      query += ` AND c.name LIKE ?`;
+      const cPattern = `%${customer}%`;
+      queryParams.push(cPattern);
+    }
+
+    if (search) {
+      query += ` AND (e.estimate_number LIKE ? OR c.name LIKE ? OR e.billing_address LIKE ? OR e.shipping_address LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    if (date) {
+      query += ` AND DATE(e.estimate_date) = DATE(?)`;
+      queryParams.push(date);
+    }
+
+    const countQuery = `SELECT COUNT(*) as total FROM (${query}) as countTable`;
+    const [countResult] = await db.query(countQuery, queryParams);
+    const totalCount = countResult[0].total;
+
+    query += ` ORDER BY e.created_at DESC LIMIT ? OFFSET ?`;
+    queryParams.push(parseInt(limit, 10), parseInt(offset, 10));
+
+    const [estimates] = await db.query(query, queryParams);
+    
+    // Send back an object with total count for frontend pagination reference
+    res.json({ estimates, totalCount });
   } catch (error) {
     console.error("Error fetching estimates:", error);
     res.status(500).json({ error: "Internal server error" });
