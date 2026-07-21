@@ -42,7 +42,8 @@ const createVendor = async (req, res) => {
       account_number,
       balance,
       asOfDate, // mapped to as_of_date
-      vehicle_number
+      vehicle_number,
+      tin
     } = req.body;
 
     console.log("Creating vendor with data:", req.body);
@@ -81,15 +82,15 @@ const createVendor = async (req, res) => {
         company_id, name, vendor_company_name, email, phone, address, 
         city, state, zip_code, country, tax_number, fax_number, 
         website, terms, account_number, balance, as_of_date, vehicle_number,
-        billing_rate, default_expense_category, is_active, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        billing_rate, default_expense_category, is_active, created_at, tin
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
       [
         company_id, name, company_name || null, email || null, phone || null,
         address || null, city || null, state || null, zip_code || null,
         country || null, tax_number || null, fax_number || null,
         website || null, terms || null, account_number || null,
         parsedBalance || 0, asOfDate || null, vehicle_number || null,
-        parsedRate || 0, taxes || null, true
+        parsedRate || 0, taxes || null, true, tin || null
       ]
     );
 
@@ -116,6 +117,7 @@ const createVendor = async (req, res) => {
       billing_rate: parsedRate || 0,
       default_expense_category: taxes || null,
       is_active: true,
+      tin: tin || null,
       created_at: new Date()
     };
 
@@ -167,7 +169,7 @@ const updateVendor = async (req, res) => {
       'name', 'vendor_company_name', 'email', 'phone', 'address', 'city', 'state',
       'zip_code', 'country', 'tax_number', 'fax_number', 'website', 'terms',
       'account_number', 'balance', 'as_of_date', 'billing_rate',
-      'default_expense_category', 'is_active'
+      'default_expense_category', 'is_active', 'tin'
     ];
 
     const fieldsToUpdate = {};

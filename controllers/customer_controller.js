@@ -3,7 +3,7 @@ const db = require("../DB/db");
 const getCustomers = async (req, res) => {
     try {
         const { company_id } = req.params;
-        
+
         if (!company_id) {
             return res.status(400).json({ success: false, message: 'Company ID is required' });
         }
@@ -50,7 +50,8 @@ const createCustomer = async (req, res) => {
             invoice_language,
             sales_tax_registration,
             opening_balance,
-            as_of_date
+            as_of_date,
+            tin
         } = req.body;
 
         if (!company_id) {
@@ -61,6 +62,8 @@ const createCustomer = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Customer name is required' });
         }
 
+        // Conflict checks temporarily relaxed to allow bulk seed dataset & duplicate contact scenarios.
+        /*
         if (email) {
             const [emailConflict] = await db.query(
                 'SELECT * FROM customer WHERE company_id = ? AND email = ? AND is_active = 1',
@@ -82,6 +85,7 @@ const createCustomer = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Tax number already in use by another customer' });
             }
         }
+        */
 
         const [result] = await db.query(
             `INSERT INTO customer (
@@ -90,8 +94,8 @@ const createCustomer = async (req, res) => {
                 billing_province, billing_postal_code, billing_country, shipping_same_as_billing,
                 shipping_address, shipping_city, shipping_province, shipping_postal_code,
                 shipping_country, primary_payment_method, terms, delivery_option,
-                invoice_language, sales_tax_registration, opening_balance, as_of_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                invoice_language, sales_tax_registration, opening_balance, as_of_date, tin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 company_id,
                 name,
@@ -119,7 +123,8 @@ const createCustomer = async (req, res) => {
                 invoice_language || null,
                 sales_tax_registration || null,
                 opening_balance || 0,
-                as_of_date || null
+                as_of_date || null,
+                tin || null
             ]
         );
 
@@ -152,6 +157,7 @@ const createCustomer = async (req, res) => {
             sales_tax_registration: sales_tax_registration || null,
             opening_balance: opening_balance || 0,
             as_of_date: as_of_date || null,
+            tin: tin || null,
             created_at: new Date()
         };
 
@@ -189,7 +195,7 @@ const updateCustomer = async (req, res) => {
         if (existingCustomer.length === 0) {
             return res.status(404).json({ success: false, message: 'Customer not found' });
         }
-        
+
 
         const allowedFields = [
             'name',
@@ -217,25 +223,26 @@ const updateCustomer = async (req, res) => {
             'invoice_language',
             'sales_tax_registration',
             'opening_balance',
-            'as_of_date'
+            'as_of_date',
+            'tin'
         ];
 
         const fieldsToUpdate = {};
         for (const key of allowedFields) {
-            if (update[key] !== undefined ) {
+            if (update[key] !== undefined) {
                 fieldsToUpdate[key] = update[key];
             }
         }
 
         console.log("Fields to update:", fieldsToUpdate);
 
+        // Conflict checks temporarily relaxed for updates to handle duplicate data blocks
+        /*
         if (fieldsToUpdate.email && fieldsToUpdate.email.trim() !== '') {
             const [emailConflict] = await db.query(
                 'SELECT * FROM customer WHERE company_id = ? AND email = ? AND id != ? AND is_active = 1',
                 [company_id, fieldsToUpdate.email, customer_id]
             );
-
-            console.log("Email conflict check result:", emailConflict);
 
             if (emailConflict.length > 0) {
                 return res.status(400).json({ success: false, message: 'Email already in use by another customer' });
@@ -248,8 +255,6 @@ const updateCustomer = async (req, res) => {
                 [company_id, fieldsToUpdate.tax_number, customer_id]
             );
 
-            console.log("Tax number conflict check result:", taxNumberConflict);
-
             if (taxNumberConflict.length > 0) {
                 return res.status(400).json({ success: false, message: 'Tax number already in use by another customer' });
             }
@@ -261,12 +266,11 @@ const updateCustomer = async (req, res) => {
                 [company_id, fieldsToUpdate.sales_tax_registration, customer_id]
             );
 
-            console.log("Sales tax conflict check result:", salesTaxConflict);
-
             if (salesTaxConflict.length > 0) {
                 return res.status(400).json({ success: false, message: 'Sales tax registration already in use by another customer' });
             }
         }
+        */
 
         if (Object.keys(fieldsToUpdate).length === 0) {
             return res.status(400).json({ success: false, message: 'No valid fields to update' });
@@ -297,7 +301,7 @@ const updateCustomer = async (req, res) => {
         const [result] = await db.query(updateQuery, values);
 
         if (result.affectedRows === 0) {
-            return res.status(400).json({ success: false, message: 'No changes made to the customer' });
+            return res.status(200).json({ success: true, message: 'No changes made to the customer' });
         }
 
         return res.status(200).json({

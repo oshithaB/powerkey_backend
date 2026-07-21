@@ -1,0 +1,30 @@
+﻿Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+company_id	int	NO	MUL	NULL	
+customer_id	int	NO	MUL	NULL	
+employee_id	int	YES	MUL	NULL	
+estimate_id	int	YES	MUL	NULL	
+invoice_number	varchar(50)	NO		NULL	
+head_note	text	YES		NULL	
+invoice_date	varchar(255)	NO		NULL	
+due_date	varchar(255)	YES		NULL	
+discount_type	enum('percentage','fixed')	YES		fixed	
+discount_value	decimal(10,2)	YES		0.00	
+shipping_cost	decimal(15,2)	NO		0.00	
+notes	text	YES		NULL	
+terms	text	YES		NULL	
+shipping_address	text	YES		NULL	
+billing_address	text	YES		NULL	
+ship_via	varchar(100)	YES		NULL	
+shipping_date	varchar(255)	YES		NULL	
+tracking_number	varchar(100)	YES		NULL	
+subtotal	decimal(10,2)	NO		NULL	
+tax_amount	decimal(10,2)	YES		0.00	
+discount_amount	decimal(10,2)	YES		0.00	
+total_amount	decimal(10,2)	NO		NULL	
+paid_amount	decimal(15,2)	YES		0.00	
+balance_due	decimal(15,2)	YES		0.00	
+status	enum('opened','sent','paid','partially_paid','overdue','cancelled','proforma')	YES		opened	
+created_at	timestamp	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+updated_at	timestamp	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+invoice_type	varchar(50)	YES		standard	

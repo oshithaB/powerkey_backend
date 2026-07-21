@@ -14,7 +14,8 @@ const createCompany = async (req, res) => {
             notes,
             termsAndConditions,
             taxRates,
-            openingBalance
+            openingBalance,
+            tin
         } = req.body;
         const companyLogo = req.file ? `/uploads/${req.file.filename}` : null;
 
@@ -47,7 +48,7 @@ const createCompany = async (req, res) => {
 
             // Insert new company
             const [result] = await connection.query(
-                'INSERT INTO company (name, is_taxable, tax_number, company_logo, address, contact_number, email_address, registration_number, terms_and_conditions, notes, opening_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO company (name, is_taxable, tax_number, company_logo, address, contact_number, email_address, registration_number, terms_and_conditions, notes, opening_balance, tin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
                     companyName,
                     isTaxable === 'Taxable' ? 1 : 0,
@@ -59,7 +60,8 @@ const createCompany = async (req, res) => {
                     companyRegistrationNumber,
                     termsAndConditions || null,
                     notes || null,
-                    openingBalance || 0
+                    openingBalance || 0,
+                    tin || null
                 ]
             );
 
@@ -107,7 +109,8 @@ const createCompany = async (req, res) => {
                 registration_number: companyRegistrationNumber,
                 terms_and_conditions: termsAndConditions || null,
                 notes: notes || null,
-                opening_balance: openingBalance || 0
+                opening_balance: openingBalance || 0,
+                tin: tin || null
             };
 
             return res.status(201).json({
@@ -269,9 +272,9 @@ const updateCompany = async (req, res) => {
         const allowedFields = [
             'name', 'is_taxable', 'tax_number', 'company_logo',
             'address', 'contact_number', 'email_address',
-            'registration_number', 'terms_and_conditions', 'notes', 'opening_balance',
+            'registration_number', 'terms_and_conditions', 'notes', 'opening_balance', 'tin',
             'invoice_prefix', 'current_invoice_number', 'current_estimate_number',
-            'invoice_separators'
+            'invoice_separators', 'current_tax_invoice_number', 'gazette_q4'
         ];
 
         const fieldsToUpdate = {};
@@ -546,7 +549,7 @@ const getNextNumbers = async (req, res) => {
     try {
         const { companyId } = req.params;
         const [company] = await db.query(
-            'SELECT invoice_prefix, current_invoice_number, current_estimate_number, invoice_separators FROM company WHERE company_id = ?',
+            'SELECT invoice_prefix, current_invoice_number, current_estimate_number, invoice_separators, current_tax_invoice_number, gazette_q4 FROM company WHERE company_id = ?',
             [companyId]
         );
 
@@ -554,7 +557,7 @@ const getNextNumbers = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Company not found' });
         }
 
-        const { invoice_prefix, current_invoice_number, current_estimate_number, invoice_separators } = company[0];
+        const { invoice_prefix, current_invoice_number, current_estimate_number, invoice_separators, current_tax_invoice_number, gazette_q4 } = company[0];
 
         // Format Logic
         const now = new Date();
@@ -573,11 +576,20 @@ const getNextNumbers = async (req, res) => {
         const nextEstSeqStr = String(nextEstSeq).padStart(4, '0');
         const nextEstimateNumber = `${prefix}${sep}${yy}${sep}EST${sep}${nextEstSeqStr}`;
 
+        // Next Tax Invoice
+        const nextTaxSeq = (current_tax_invoice_number || 0) + 1;
+        const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+        const mmm = monthNames[now.getMonth()];
+        const qqqq = gazette_q4 || 'HQ01';
+        const nextTaxSeqStr = String(nextTaxSeq).padStart(5, '0');
+        const nextTaxInvoiceNumber = `${yy}${mmm}_${qqqq}_${nextTaxSeqStr}`;
+
         return res.status(200).json({
             success: true,
             invoice_prefix: prefix,
             next_invoice_number: nextInvoiceNumber,
             next_estimate_number: nextEstimateNumber,
+            next_tax_invoice_number: nextTaxInvoiceNumber,
             invoice_separators: useSeparator
         });
 

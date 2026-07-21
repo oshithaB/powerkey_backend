@@ -1,0 +1,33 @@
+﻿Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+company_id	int	NO	MUL	NULL	
+name	varchar(255)	YES		NULL	
+email	varchar(255)	YES		NULL	
+is_taxable	tinyint(1)	YES		0	
+tax_number	varchar(100)	YES		NULL	
+phone	varchar(50)	YES		NULL	
+vehicle_number	varchar(100)	YES		NULL	
+credit_limit	decimal(12,2)	YES		0.00	
+current_balance	decimal(12,2)	YES		0.00	
+billing_address	varchar(255)	YES		NULL	
+billing_city	varchar(100)	YES		NULL	
+billing_province	varchar(100)	YES		NULL	
+billing_postal_code	varchar(20)	YES		NULL	
+billing_country	varchar(100)	YES		NULL	
+shipping_same_as_billing	tinyint(1)	YES		0	
+shipping_address	varchar(255)	YES		NULL	
+shipping_city	varchar(100)	YES		NULL	
+shipping_province	varchar(100)	YES		NULL	
+shipping_postal_code	varchar(20)	YES		NULL	
+shipping_country	varchar(100)	YES		NULL	
+primary_payment_method	varchar(100)	YES		NULL	
+terms	varchar(100)	YES		NULL	
+delivery_option	varchar(100)	YES		NULL	
+invoice_language	varchar(100)	YES		NULL	
+sales_tax_registration	varchar(100)	YES		NULL	
+opening_balance	decimal(12,2)	YES		0.00	
+is_active	tinyint(1)	YES		1	
+as_of_date	varchar(255)	YES		NULL	
+created_at	timestamp	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+updated_at	timestamp	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+tin	varchar(100)	YES		NULL	

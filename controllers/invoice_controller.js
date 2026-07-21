@@ -29,7 +29,8 @@ const createInvoice = asyncHandler(async (req, res) => {
     total_amount,
     status,
     items,
-    attachment
+    attachment,
+    invoice_type // "standard", "proforma", "tax_invoice"
   } = req.body;
 
   console.log('Creating invoice with data:', req.body);
@@ -81,7 +82,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     // --- Transactional Invoice Number Generation ---
     // Select company row FOR UPDATE to lock it
     const [companyData] = await connection.query(
-      `SELECT invoice_prefix, current_invoice_number, invoice_separators FROM company WHERE company_id = ? FOR UPDATE`,
+      `SELECT invoice_prefix, current_invoice_number, current_tax_invoice_number, invoice_separators, gazette_q4 FROM company WHERE company_id = ? FOR UPDATE`,
       [company_id]
     );
 
@@ -90,8 +91,9 @@ const createInvoice = asyncHandler(async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const { invoice_prefix, current_invoice_number, invoice_separators } = companyData[0];
+    const { invoice_prefix, current_invoice_number, current_tax_invoice_number, invoice_separators, gazette_q4 } = companyData[0];
     const nextNumber = (current_invoice_number || 0) + 1;
+    const nextTaxNumber = (current_tax_invoice_number || 0) + 1;
 
     // Generate YY format
     const now = new Date();
@@ -105,10 +107,20 @@ const createInvoice = asyncHandler(async (req, res) => {
     const useSeparator = (invoice_separators !== 0 && invoice_separators !== false);
     const sep = useSeparator ? '-' : '';
 
-    // Format: PREFIX[-][YY][-]INV[-]NUMBER
-    const newInvoiceNumber = `${prefix}${sep}${yy}${sep}INV${sep}${nextNumber}`;
+    let newInvoiceNumber = '';
 
-    console.log(`Generated New Invoice Number: ${newInvoiceNumber}`);
+    if (invoice_type === 'tax_invoice') {
+      const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const mmm = monthNames[now.getMonth()];
+      const qqqq = gazette_q4 || 'HQ01';
+      const nextTaxSeqStr = String(nextTaxNumber).padStart(5, '0');
+      newInvoiceNumber = `${yy}${mmm}_${qqqq}_${nextTaxSeqStr}`;
+    } else {
+      // Format: PREFIX[-][YY][-]INV[-]NUMBER
+      newInvoiceNumber = `${prefix}${sep}${yy}${sep}INV${sep}${nextNumber}`;
+    }
+
+    console.log(`Generated New Invoice Number: ${newInvoiceNumber} (Type: ${invoice_type || 'standard'})`);
 
     // --- Prepare invoice data ---
     const invoiceData = {
@@ -134,14 +146,15 @@ const createInvoice = asyncHandler(async (req, res) => {
       discount_amount: discount_amount || 0,
       shipping_cost: shipping_cost || 0,
       total_amount,
-      balance_due: status === 'proforma' ? 0 : (total_amount || 0),
+      balance_due: (status === 'proforma' || invoice_type === 'proforma') ? 0 : (total_amount || 0),
       status,
+      invoice_type: invoice_type || 'standard',
       created_at: new Date(),
       updated_at: new Date()
     };
 
     // --- Update customer balance (if not proforma) ---
-    if (status !== 'proforma') {
+    if (status !== 'proforma' && invoice_type !== 'proforma') {
 
       const [customerRows] = await connection.query(
         `SELECT current_balance FROM customer WHERE id = ? AND company_id = ?`,
@@ -166,10 +179,17 @@ const createInvoice = asyncHandler(async (req, res) => {
     const invoiceId = result.insertId;
 
     // --- Update company current_invoice_number ---
-    await connection.query(
-      `UPDATE company SET current_invoice_number = ? WHERE company_id = ?`,
-      [nextNumber, company_id]
-    );
+    if (invoice_type === 'tax_invoice') {
+      await connection.query(
+        `UPDATE company SET current_tax_invoice_number = ? WHERE company_id = ?`,
+        [nextTaxNumber, company_id]
+      );
+    } else {
+      await connection.query(
+        `UPDATE company SET current_invoice_number = ? WHERE company_id = ?`,
+        [nextNumber, company_id]
+      );
+    }
 
     // --- Insert invoice items ---
     const itemQuery = `INSERT INTO invoice_items
@@ -212,7 +232,7 @@ const createInvoice = asyncHandler(async (req, res) => {
       ];
 
       // Check stock (if not proforma)
-      if (status !== 'proforma') {
+      if (status !== 'proforma' && invoice_type !== 'proforma') {
         if (availableQuantity < Number(item.quantity)) {
           await connection.rollback();
           return res.status(404).json({
@@ -269,7 +289,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         itemData.push(JSON.stringify(invoiceItemStockDetails));
       }
 
-      if (status === 'proforma') {
+      if (status === 'proforma' || invoice_type === 'proforma') {
         itemData.push(JSON.stringify([])); // empty stock detail for proforma
       }
 
@@ -281,7 +301,7 @@ const createInvoice = asyncHandler(async (req, res) => {
       }
 
       // Reduce product stock (if not proforma)
-      if (status !== 'proforma') {
+      if (status !== 'proforma' && invoice_type !== 'proforma') {
         await connection.query(
           `UPDATE products SET quantity_on_hand = quantity_on_hand - ? WHERE id = ? AND company_id = ?`,
           [item.quantity, item.product_id, company_id]
@@ -326,6 +346,7 @@ const createInvoice = asyncHandler(async (req, res) => {
       shipping_cost,
       total_amount,
       status,
+      invoice_type: invoice_type || 'standard',
       created_at: invoiceData.created_at.toISOString(),
       updated_at: invoiceData.updated_at.toISOString(),
       items
@@ -1374,7 +1395,7 @@ const getInvoices = async (req, res) => {
         [company_id]
       );
 
-      let query = `SELECT i.*, c.name AS customer_name, c.email AS customer_email, c.phone AS customer_phone, c.tax_number AS customer_tax_number, c.credit_limit AS customer_credit_limit,
+      let query = `SELECT i.*, c.name AS customer_name, c.email AS customer_email, c.phone AS customer_phone, c.tax_number AS customer_tax_number, c.tin AS customer_tin, c.credit_limit AS customer_credit_limit,
                      e.name AS employee_name,
                      (SELECT payment_method FROM payments WHERE invoice_id = i.id ORDER BY id DESC LIMIT 1) as payment_method
                    FROM invoices i
@@ -2502,7 +2523,7 @@ const getInvoiceSummary = async (req, res) => {
     `;
 
     const [rows] = await db.query(query, [company_id]);
-    
+
     // Default summary structure
     const summary = {
       overdue: 0,
@@ -2518,12 +2539,12 @@ const getInvoiceSummary = async (req, res) => {
       const paidAmountNum = Number(row.total_paid_amount) || 0;
 
       if (row.status === 'overdue') summary.overdue += balanceDueNum;
-      
+
       // Balance Due calculation matching frontend: (partially_paid ? balance_due : total_amount) for specific statuses
       if (['partially_paid', 'opened', 'sent'].includes(row.status)) {
         summary.balanceDue += (row.status === 'partially_paid') ? balanceDueNum : sumTotalAmountNum;
       }
-      
+
       if (row.status === 'partially_paid') summary.partiallyPaid += paidAmountNum;
       if (row.status === 'paid') summary.paid += paidAmountNum;
       if (row.status === 'cancelled') summary.cancelled += sumTotalAmountNum;

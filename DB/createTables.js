@@ -761,7 +761,13 @@ async function createTables(db) {
             { table: 'products', column: 'cost_price', definition: 'DECIMAL(15,4) DEFAULT 0 AFTER unit_price' },
             { table: 'invoice_items', column: 'cost_price', definition: 'DECIMAL(15,4) DEFAULT 0 AFTER unit_price' },
             { table: 'invoice_items', column: 'actual_unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0 AFTER cost_price' },
-            { table: 'estimate_items', column: 'actual_unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0 AFTER unit_price' }
+            { table: 'estimate_items', column: 'actual_unit_price', definition: 'DECIMAL(15,4) NOT NULL DEFAULT 0 AFTER unit_price' },
+            { table: 'company', column: 'tin', definition: 'VARCHAR(100) DEFAULT NULL' },
+            { table: 'customer', column: 'tin', definition: 'VARCHAR(100) DEFAULT NULL' },
+            { table: 'vendor', column: 'tin', definition: 'VARCHAR(100) DEFAULT NULL' },
+            { table: 'company', column: 'current_tax_invoice_number', definition: 'INT DEFAULT 0' },
+            { table: 'company', column: 'gazette_q4', definition: 'VARCHAR(10) DEFAULT "HQ01"' },
+            { table: 'invoices', column: 'invoice_type', definition: 'VARCHAR(50) DEFAULT "standard"' }
         ];
 
         for (const m of migrations) {

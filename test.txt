@@ -1,0 +1,13 @@
+hipping_country || '',
+      primary_payment_method: customer.primary_payment_method || '',
+      terms: customer.terms || '',
+      delivery_option: customer.delivery_option || '',
+      invoice_language: customer.invoice_language || '',
+      sales_tax_registration: customer.sales_tax_registration || '',
+      opening_balance: customer.opening_balance || 0,
+      as_of_date: customer.as_of_date || ''
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: number) =>
